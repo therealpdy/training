@@ -176,6 +176,29 @@ input, select, textarea {
 }
 .timerzahl { font-size: 96px; font-weight: 800; letter-spacing: -2px; color: var(--akzent); font-variant-numeric: tabular-nums; }
 
+/* ---------- Wisch-Regler zum Abbrechen ---------- */
+.schieber {
+  position: relative; width: 100%; max-width: 320px; height: 58px;
+  border-radius: 29px; border: 1px solid var(--akzent);
+  background: rgba(225,6,0,.08); overflow: hidden;
+  touch-action: none;   /* wichtig: sonst scrollt die Seite beim Ziehen */
+  user-select: none;
+}
+.schieber-fuellung {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 54px;
+  background: rgba(225,6,0,.35);
+}
+.schieber-text {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 14px; color: var(--text); pointer-events: none;
+}
+.schieber-knopf {
+  position: absolute; left: 4px; top: 4px; width: 50px; height: 50px;
+  border-radius: 25px; background: var(--akzent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px; font-weight: 700; cursor: grab;
+}
+
 /* ---------- Formular-Fenster von unten ---------- */
 #sheet { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 60; display: flex; align-items: flex-end; justify-content: center; }
 #sheet > div {
@@ -198,6 +221,12 @@ input, select, textarea {
 .kachel .wert { font-size: 22px; font-weight: 800; }
 .kachel .text { font-size: 11px; color: var(--leise); margin-top: 4px; }
 svg.chart { width: 100%; height: 180px; margin-top: 12px; display: block; }
+
+/* Waagerechte Balken (Verteilung auf Muskelgruppen) */
+.reihe { margin-top: 12px; }
+.reihe-kopf { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; }
+.reihe-balken { height: 8px; background: var(--kante); border-radius: 4px; overflow: hidden; }
+.reihe-balken > div { height: 100%; background: var(--akzent); border-radius: 4px; }
 .hinweis { font-size: 12px; color: var(--leise); text-align: center; margin-top: 10px; line-height: 1.5; }
 </style>
 </head>
@@ -461,7 +490,8 @@ function htmlTrainingLaeuft() {
       <div class="saetze">${warm}${saetze}</div></div>`;
   }).join("");
 
-  h += `<button class="knopf2" data-beenden="1" style="padding:16px;font-weight:700">Training beenden</button>`;
+  h += `<button class="knopf2" data-beenden="1" style="padding:16px;font-weight:700">Training beenden</button>
+    <button class="knopf2" data-abbruchfragen="1" style="color:var(--akzent);border-color:transparent">Training abbrechen</button>`;
   return h;
 }
 
@@ -505,27 +535,109 @@ function htmlGeraete() {
 
 /* ---------- Reiter "Statistik" ---------- */
 function htmlStatistik() {
-  const vorWoche = Date.now() - 7 * 86400000;
-  const dieseWoche = daten.verlauf.filter(v => new Date(v.datum).getTime() > vorWoche).length;
-  const oDauer = daten.verlauf.length
-    ? Math.round(daten.verlauf.reduce((s, v) => s + v.dauerMin, 0) / daten.verlauf.length) : 0;
+  const V = daten.verlauf;
+  if (V.length === 0) {
+    return `<p class="hinweis" style="padding-top:40px">Noch keine Trainings aufgezeichnet.<br>
+      Nach deinem ersten abgeschlossenen Training erscheinen hier Diagramme und Auswertungen.</p>`;
+  }
 
+  const vorWoche = Date.now() - 7 * 86400000;
+  const dieseWoche = V.filter(v => new Date(v.datum).getTime() > vorWoche).length;
+  const oDauer = Math.round(V.reduce((s, v) => s + v.dauerMin, 0) / V.length);
+  const gesamtVolumen = V.reduce((s, v) => s + (v.volumen || 0), 0);
+  const gesamtSaetze = V.reduce((s, v) => s + (v.saetzeErledigt || 0), 0);
+
+  /* ---------- Kennzahlen oben ---------- */
   let h = `<div class="kacheln">
     ${kachel(dieseWoche, "Trainings diese Woche")}
-    ${kachel(daten.verlauf.length, "Trainings gesamt")}
-    ${kachel(daten.verlauf[0] ? daten.verlauf[0].volumen + " kg" : "–", "Letztes Volumen")}
-    ${kachel(oDauer ? oDauer + " min" : "–", "Ø Dauer")}
+    ${kachel(V.length, "Trainings gesamt")}
+    ${kachel(V[0].volumen + " kg", "Letztes Volumen")}
+    ${kachel(oDauer + " min", "Ø Dauer")}
+    ${kachel(gesamtSaetze, "Sätze insgesamt")}
+    ${kachel(Math.round(gesamtVolumen / 1000) + " t", "Gesamt bewegt")}
   </div>`;
 
-  /* Gewichtsverlauf pro Gerät */
+  /* ---------- Volumen der letzten Trainings ----------
+     Volumen = Gewicht × Wiederholungen, aufsummiert über alle
+     Sätze eines Trainings. Steigt die Kurve, wird die
+     Gesamtbelastung größer. */
+  const volPunkte = [...V].slice(0, 12).reverse()
+    .map(v => ({ label: datumKurz(v.datum), wert: v.volumen || 0 }));
+  h += `<div class="karte" style="margin-top:16px">
+    <div class="titel">Volumen je Training</div>
+    <div class="unter">Gewicht × Wiederholungen, letzte ${volPunkte.length} Trainings</div>
+    ${volPunkte.length > 1 ? diagramm(volPunkte, "var(--akzent)")
+      : `<p class="hinweis">Ab dem zweiten Training erscheint hier eine Kurve.</p>`}</div>`;
+
+  /* ---------- Trainings pro Woche (letzte 8 Wochen) ---------- */
+  const wochen = [];
+  for (let i = 7; i >= 0; i--) {
+    const bis = Date.now() - i * 7 * 86400000;
+    const von = bis - 7 * 86400000;
+    wochen.push({
+      label: i === 0 ? "jetzt" : datumKurz(new Date(von).toISOString()),
+      wert: V.filter(v => { const t = new Date(v.datum).getTime(); return t > von && t <= bis; }).length,
+    });
+  }
+  h += `<div class="karte">
+    <div class="titel">Trainings pro Woche</div>
+    <div class="unter">Die letzten 8 Wochen</div>
+    ${balkenDiagramm(wochen, "var(--blau)")}</div>`;
+
+  /* ---------- Verteilung auf Muskelgruppen ----------
+     Wir rechnen das Volumen jedes Geräts seiner Muskelgruppe zu.
+     So siehst du, ob eine Körperregion zu kurz kommt. */
+  const proGruppe = {};
+  V.forEach(v => (v.geraete || []).forEach(g => {
+    const geraet = daten.geraete.find(x => x.id === g.id);
+    const gruppe = geraet ? geraet.muskelgruppe : "Gelöschte Geräte";
+    const vol = g.wdh.reduce((s, w) => s + (w || 0) * g.gewicht, 0);
+    proGruppe[gruppe] = (proGruppe[gruppe] || 0) + vol;
+  }));
+  const gruppen = Object.entries(proGruppe).sort((a, b) => b[1] - a[1]);
+  /* Summe aller Gruppen als Bezugsgröße – so ergeben die
+     Prozentwerte zusammen immer genau 100 %. */
+  const summeGruppen = gruppen.reduce((s, [, vol]) => s + vol, 0) || 1;
+  const groesste = gruppen.length ? gruppen[0][1] : 1;
+  h += `<div class="karte">
+    <div class="titel">Verteilung auf Muskelgruppen</div>
+    <div class="unter">Anteil am gesamten Volumen</div>
+    ${gruppen.map(([name, vol]) => `<div class="reihe">
+      <div class="reihe-kopf"><span>${esc(name)}</span>
+        <span style="color:var(--leise)">${Math.round(vol / summeGruppen * 100)}%</span></div>
+      <div class="reihe-balken"><div style="width:${vol / groesste * 100}%"></div></div>
+    </div>`).join("")}</div>`;
+
+  /* ---------- Bestwerte je Gerät ----------
+     Höchstes Gewicht, mit dem du an einem Gerät trainiert hast. */
+  const rekorde = [];
+  daten.geraete.forEach(g => {
+    let best = 0, datum = null;
+    V.forEach(v => (v.geraete || []).forEach(x => {
+      if (x.id === g.id && x.gewicht > best) { best = x.gewicht; datum = v.datum; }
+    }));
+    if (best > 0) rekorde.push({ name: g.name, kg: best, datum, jetzt: g.gewicht });
+  });
+  if (rekorde.length) {
+    h += `<div class="karte">
+      <div class="titel">Bestwerte je Gerät</div>
+      <div class="unter">Höchstes bisher genutztes Gewicht</div>
+      ${rekorde.map(r => `<div class="zeile" style="margin-top:10px">
+        <div><div style="font-size:14px">${esc(r.name)}</div>
+          <div class="unter" style="margin:0">${datumKurz(r.datum)}${r.jetzt < r.kg ? " · aktuell " + r.jetzt + " kg" : ""}</div></div>
+        <div style="font-weight:700;color:var(--gruen)">${r.kg} kg</div>
+      </div>`).join("")}</div>`;
+  }
+
+  /* ---------- Gewichtsverlauf eines einzelnen Geräts ---------- */
   const punkte = [];
   if (ui.chartGeraet) {
-    [...daten.verlauf].reverse().forEach(v => {
+    [...V].reverse().forEach(v => {
       const g = (v.geraete || []).find(x => x.id === ui.chartGeraet);
       if (g) punkte.push({ label: datumKurz(v.datum), wert: g.gewicht });
     });
   }
-  h += `<div class="karte" style="margin-top:16px">
+  h += `<div class="karte">
     <div class="titel" style="margin-bottom:10px">Gewichtsverlauf pro Gerät</div>
     <select id="chartWahl"><option value="">Gerät wählen…</option>
       ${daten.geraete.map(g => `<option value="${g.id}" ${ui.chartGeraet === g.id ? "selected" : ""}>${esc(g.name)}</option>`).join("")}
@@ -536,7 +648,7 @@ function htmlStatistik() {
       : ""}
   </div>`;
 
-  /* Körpergewicht */
+  /* ---------- Körpergewicht ---------- */
   const kgPunkte = daten.koerpergewicht.map(e => ({ label: datumKurz(e.datum), wert: e.kg }));
   h += `<div class="karte">
     <div class="titel" style="margin-bottom:10px">Körpergewicht</div>
@@ -552,6 +664,26 @@ function htmlStatistik() {
 
 const kachel = (wert, text) =>
   `<div class="karte kachel" style="margin:0"><div class="wert">${wert}</div><div class="text">${text}</div></div>`;
+
+/* Einfaches Balkendiagramm als SVG (z. B. Trainings pro Woche) */
+function balkenDiagramm(punkte, farbe) {
+  const B = 300, H = 130, unten = 20;
+  const max = Math.max(...punkte.map(p => p.wert), 1);
+  const breite = (B - 10) / punkte.length;
+
+  const balken = punkte.map((p, i) => {
+    const hoehe = p.wert / max * (H - unten - 16);
+    const x = 5 + i * breite;
+    return `<rect x="${x + breite * .18}" y="${H - unten - hoehe}" width="${breite * .64}" height="${hoehe}"
+              fill="${farbe}" rx="3"/>
+            ${p.wert > 0 ? `<text x="${x + breite / 2}" y="${H - unten - hoehe - 4}" fill="#F5F5F7"
+              font-size="9" text-anchor="middle">${p.wert}</text>` : ""}
+            <text x="${x + breite / 2}" y="${H - 5}" fill="#8E8E93" font-size="8" text-anchor="middle">${p.label}</text>`;
+  }).join("");
+
+  return `<svg class="chart" viewBox="0 0 ${B} ${H}" preserveAspectRatio="none">
+    <line x1="5" y1="${H - unten}" x2="${B - 5}" y2="${H - unten}" stroke="#232328"/>${balken}</svg>`;
+}
 
 /* Einfaches Liniendiagramm als SVG (ohne externe Bibliothek) */
 function diagramm(punkte, farbe) {
@@ -600,13 +732,18 @@ function htmlVerlauf() {
 function trainingStarten(planId) {
   const plan = daten.plaene.find(p => p.id === planId);
   const fortschritt = {};
+  /* Gewichte zu Beginn merken. Wird das Training abgebrochen,
+     setzen wir sie wieder auf diesen Stand zurück – dann bleibt
+     wirklich nichts vom Abbruch übrig. */
+  const gewichteVorher = {};
   geraeteFuerPlan(planId).forEach(g => {
+    gewichteVorher[g.id] = g.gewicht;
     fortschritt[g.id] = {
       aufwaerm: Array(g.aufwaerm || 0).fill(false),   // Warm-up: erledigt ja/nein
       saetze: Array(g.saetze).fill(null),             // null = offen, Zahl = geschaffte Wdh
     };
   });
-  ui.training = { start: Date.now(), planId, planName: plan ? plan.name : "Freies Training", fortschritt };
+  ui.training = { start: Date.now(), planId, planName: plan ? plan.name : "Freies Training", fortschritt, gewichteVorher };
   ui.tab = "training";
   zeichnen();
 }
@@ -681,6 +818,93 @@ function trainingBeenden() {
   ui.training = null;
   pauseBeenden();
   zusammenfassungZeigen({ dauerMin, erledigt, gesamt, volumen: Math.round(volumen), steigerungen });
+  zeichnen();
+}
+
+/* ==================================================================
+   TRAINING ABBRECHEN
+   ------------------------------------------------------------------
+   Doppelte Absicherung: erst der Knopf "Training abbrechen",
+   dann muss der Regler bis ganz nach rechts geschoben werden.
+   Ein versehentliches Antippen kann also nichts auslösen.
+   Beim Abbruch wird NICHTS gespeichert – auch Gewichte, die du
+   während des Trainings geändert hast, werden zurückgesetzt.
+   ================================================================== */
+function abbruchFragen() {
+  pauseBeenden(); // Laufende Pause zuerst schließen
+  const o = document.getElementById("overlay");
+  o.classList.remove("versteckt");
+  o.innerHTML = `
+    <div style="font-size:22px;font-weight:800">Training abbrechen?</div>
+    <div style="color:var(--leise);line-height:1.7;max-width:320px">
+      Dein Fortschritt aus diesem Training wird <b style="color:var(--akzent)">nicht gespeichert</b>.
+      Auch geänderte Gewichte werden auf den Stand vor dem Training zurückgesetzt.</div>
+
+    <div class="schieber" id="schieber">
+      <div class="schieber-fuellung" id="schieberFuellung"></div>
+      <div class="schieber-text" id="schieberText">Zum Abbrechen schieben</div>
+      <div class="schieber-knopf" id="schieberKnopf">›</div>
+    </div>
+
+    <button class="knopf" data-weitertrainieren="1" style="width:auto;padding:14px 34px">Weiter trainieren</button>`;
+  schieberEinrichten();
+}
+
+/* Die Wisch-Geste: Knopf lässt sich nach rechts ziehen.
+   Erst ganz rechts löst der Abbruch aus. */
+function schieberEinrichten() {
+  const bahn = document.getElementById("schieber");
+  const knopf = document.getElementById("schieberKnopf");
+  const fuellung = document.getElementById("schieberFuellung");
+  const text = document.getElementById("schieberText");
+  let zieht = false, startX = 0, weg = 0;
+
+  const maxWeg = () => bahn.offsetWidth - knopf.offsetWidth - 8;
+
+  /* Knopf an eine bestimmte Position setzen */
+  function setzen(px) {
+    weg = Math.max(0, Math.min(maxWeg(), px));
+    knopf.style.transform = `translateX(${weg}px)`;
+    fuellung.style.width = (weg + knopf.offsetWidth) + "px";
+    text.style.opacity = 1 - weg / maxWeg();       // Text wird beim Schieben blasser
+  }
+
+  knopf.addEventListener("pointerdown", e => {
+    zieht = true; startX = e.clientX - weg;
+    knopf.setPointerCapture(e.pointerId);
+    knopf.style.transition = "none";
+    fuellung.style.transition = "none";
+  });
+
+  knopf.addEventListener("pointermove", e => {
+    if (zieht) setzen(e.clientX - startX);
+  });
+
+  knopf.addEventListener("pointerup", () => {
+    zieht = false;
+    /* Ganz rechts angekommen? Dann abbrechen. */
+    if (weg >= maxWeg() - 4) {
+      trainingAbbrechen();
+    } else {
+      /* Sonst gleitet der Knopf zurück an den Anfang */
+      knopf.style.transition = "transform .25s";
+      fuellung.style.transition = "width .25s";
+      setzen(0);
+    }
+  });
+}
+
+/* Training verwerfen und alles auf den Stand von vorher zurücksetzen */
+function trainingAbbrechen() {
+  const vorher = ui.training.gewichteVorher || {};
+  /* Während des Trainings geänderte Gewichte zurücksetzen */
+  daten.geraete.forEach(g => {
+    if (vorher[g.id] !== undefined) g.gewicht = vorher[g.id];
+  });
+  speichern();          // Nur die Rücksetzung sichern, kein Trainingseintrag
+  ui.training = null;
+  pauseBeenden();
+  document.getElementById("overlay").classList.add("versteckt");
   zeichnen();
 }
 
@@ -925,7 +1149,7 @@ function importieren() {
    eine "data-..."-Markierung, an der man erkennt, was er tun soll.
    ================================================================== */
 document.addEventListener("click", e => {
-  const ziel = e.target.closest("[data-tab],[data-start],[data-planneu],[data-planbearbeiten],[data-planhoch],[data-planrunter],[data-plansichern],[data-planloeschen],[data-geraetneu],[data-geraetbearbeiten],[data-geraethoch],[data-geraetrunter],[data-geraetsichern],[data-geraetloeschen],[data-satz],[data-warm],[data-kg],[data-beenden],[data-timerplus],[data-timerstop],[data-abbrechen],[data-export],[data-import],[data-download],[data-chip],[data-kgspeichern],[data-spaeter]");
+  const ziel = e.target.closest("[data-tab],[data-start],[data-planneu],[data-planbearbeiten],[data-planhoch],[data-planrunter],[data-plansichern],[data-planloeschen],[data-geraetneu],[data-geraetbearbeiten],[data-geraethoch],[data-geraetrunter],[data-geraetsichern],[data-geraetloeschen],[data-satz],[data-warm],[data-kg],[data-beenden],[data-timerplus],[data-timerstop],[data-abbrechen],[data-export],[data-import],[data-download],[data-chip],[data-kgspeichern],[data-spaeter],[data-abbruchfragen],[data-weitertrainieren]");
   if (!ziel) return;
   const d = ziel.dataset;
 
@@ -935,6 +1159,8 @@ document.addEventListener("click", e => {
   else if (d.warm)   warmTippen(d.warm, +d.i);
   else if (d.kg)     gewichtAendern(d.kg, +d.d);
   else if (d.beenden) trainingBeenden();
+  else if (d.abbruchfragen)     abbruchFragen();
+  else if (d.weitertrainieren)  document.getElementById("overlay").classList.add("versteckt");
 
   else if (d.timerplus) { ui.timer += KONFIG.PAUSE_EXTRA; timerZeichnen(); }
   else if (d.timerstop) pauseBeenden();
