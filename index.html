@@ -263,7 +263,10 @@ svg.chart { width: 100%; height: 180px; margin-top: 12px; display: block; }
 
 /* ---------- Barcode-Scanner ---------- */
 .barcode-box { border:1px solid var(--kante); border-radius:14px; padding:12px; margin-top:12px; }
-.barcode-video { width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:14px; background:#000; display:block; }
+.barcode-kamera { position:relative; border-radius:14px; overflow:hidden; background:#000; }
+.barcode-video { width:100%; aspect-ratio:4/3; object-fit:cover; background:#000; display:block; }
+.barcode-rahmen { position:absolute; left:9%; right:9%; top:37%; height:26%; border:2px solid rgba(255,255,255,.9); border-radius:12px; box-shadow:0 0 0 999px rgba(0,0,0,.22); pointer-events:none; }
+.barcode-rahmen::after { content:""; position:absolute; left:8%; right:8%; top:50%; height:2px; background:var(--akzent); box-shadow:0 0 8px var(--akzent); }
 .barcode-status { font-size:12px; color:var(--leise); line-height:1.5; margin-top:9px; text-align:center; }
 .barcode-status.fehler { color:var(--akzent); }
 .barcode-produkt { margin-top:12px; padding:12px; border:1px solid var(--kante); border-radius:12px; }
@@ -279,6 +282,8 @@ svg.chart { width: 100%; height: 180px; margin-top: 12px; display: block; }
 <div id="overlay" class="versteckt"></div>
 <div id="sheet" class="versteckt"></div>
 
+<!-- Barcode-Erkennung für Safari/iPhone. Wird nur für den Scanner benötigt. -->
+<script src="https://unpkg.com/@zxing/browser@0.2.1/umd/zxing-browser.min.js"></script>
 <script>
 /* ==================================================================
    KONFIGURATION
@@ -286,7 +291,7 @@ svg.chart { width: 100%; height: 180px; margin-top: 12px; display: block; }
    Doppelpunkt ändern.
    ================================================================== */
 const KONFIG = {
-  VERSION: "0.4",            // Versionsnummer der App – bei Änderungen hochzählen (z. B. "0.2")
+  VERSION: "0.5",            // Versionsnummer der App – bei Änderungen hochzählen (z. B. "0.2")
   STANDARD_SAETZE: 3,        // Arbeitssätze für neue Geräte
   STANDARD_WDH: 10,          // Ziel-Wiederholungen für neue Geräte
   STANDARD_GEWICHT: 20,      // Startgewicht in kg für neue Geräte
@@ -321,8 +326,9 @@ let ui = {
   timerLauf: null,     // Interner Zähler
   chartGeraet: "",     // Gewähltes Gerät im Diagramm
   kalorienDatum: new Date().toISOString().slice(0, 10), // Angezeigter Tag im Kalorientracker
-  scannerStream: null, // Kamera-Stream des Barcode-Scanners
-  scannerLauf: false,  // Läuft die Erkennung gerade?
+  scannerStream: null,   // Fallback/älterer Kamera-Stream
+  scannerSteuerung: null, // ZXing-Scanner-Steuerung (stoppt Kamera + Erkennung)
+  scannerLauf: false,    // Läuft die Erkennung gerade?
 };
 
 /* Hell-/Dunkelmodus – Auswahl bleibt auf diesem Gerät gespeichert */
@@ -823,7 +829,10 @@ function kalorienFormular(mahlzeit) {
       </div>
       <button class="knopf2" data-barcodescan="1">📷 Barcode scannen</button>
       <div id="barcodeBereich" class="versteckt" style="margin-top:10px">
-        <video id="barcodeVideo" class="barcode-video" playsinline muted></video>
+        <div class="barcode-kamera">
+          <video id="barcodeVideo" class="barcode-video" playsinline muted autoplay></video>
+          <div class="barcode-rahmen"></div>
+        </div>
         <div id="barcodeStatus" class="barcode-status">Kamera wird gestartet…</div>
         <button class="knopf2 rot" data-barcodestop="1">Scanner schließen</button>
       </div>
@@ -841,9 +850,23 @@ function kalorienFormular(mahlzeit) {
 
 function scannerStoppen() {
   ui.scannerLauf = false;
+
+  /* ZXing stoppt damit sowohl die Erkennung als auch den Kamera-Stream. */
+  if (ui.scannerSteuerung) {
+    try { ui.scannerSteuerung.stop(); } catch (e) {}
+    ui.scannerSteuerung = null;
+  }
+
+  /* Sicherheitshalber auch einen eventuell vorhandenen Stream schließen. */
   if (ui.scannerStream) {
-    ui.scannerStream.getTracks().forEach(t => t.stop());
+    try { ui.scannerStream.getTracks().forEach(t => t.stop()); } catch (e) {}
     ui.scannerStream = null;
+  }
+
+  const video = document.getElementById('barcodeVideo');
+  if (video?.srcObject) {
+    try { video.srcObject.getTracks().forEach(t => t.stop()); } catch (e) {}
+    video.srcObject = null;
   }
 }
 
@@ -852,6 +875,8 @@ async function barcodeScannerStarten() {
   const video = document.getElementById('barcodeVideo');
   const status = document.getElementById('barcodeStatus');
   if (!bereich || !video || !status) return;
+
+  scannerStoppen();
   bereich.classList.remove('versteckt');
   status.className = 'barcode-status';
   status.textContent = 'Kamera wird gestartet…';
@@ -861,43 +886,55 @@ async function barcodeScannerStarten() {
     status.textContent = 'Kamerazugriff benötigt HTTPS. Nutze alternativ die manuelle Barcode-Eingabe.';
     return;
   }
-  if (!('BarcodeDetector' in window)) {
+
+  if (!window.ZXingBrowser?.BrowserMultiFormatReader) {
     status.className = 'barcode-status fehler';
-    status.textContent = 'Dieser Browser unterstützt die automatische Barcode-Erkennung nicht. Du kannst den Barcode oben manuell eingeben.';
+    status.textContent = 'Der Barcode-Scanner konnte nicht geladen werden. Prüfe die Internetverbindung und lade die Seite neu.';
     return;
   }
 
   try {
-    scannerStoppen();
-    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
-    ui.scannerStream = stream;
-    video.srcObject = stream;
-    await video.play();
-    const detector = new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e']});
-    ui.scannerLauf = true;
-    status.textContent = 'Barcode in die Bildmitte halten…';
+    const reader = new ZXingBrowser.BrowserMultiFormatReader(undefined, {
+      delayBetweenScanAttempts: 120,
+      delayBetweenScanSuccess: 500,
+    });
 
-    const erkennen = async () => {
-      if (!ui.scannerLauf || !document.getElementById('barcodeVideo')) return;
-      try {
-        const codes = await detector.detect(video);
-        if (codes.length && codes[0].rawValue) {
-          const code = codes[0].rawValue.replace(/\D/g,'');
-          document.getElementById('barcodeFeld').value = code;
-          status.textContent = 'Barcode erkannt: ' + code;
-          scannerStoppen();
-          bereich.classList.add('versteckt');
-          await barcodeProduktLaden(code);
-          return;
-        }
-      } catch (e) {}
-      requestAnimationFrame(erkennen);
-    };
-    requestAnimationFrame(erkennen);
+    ui.scannerLauf = true;
+    status.textContent = 'Barcode waagerecht in den Rahmen halten…';
+
+    /* Ohne Geräte-ID bevorzugt ZXing über facingMode die Rückkamera. */
+    const steuerung = await reader.decodeFromVideoDevice(undefined, video, async (result, error, controls) => {
+      if (!ui.scannerLauf || !result) return;
+
+      const roh = typeof result.getText === 'function' ? result.getText() : result.text;
+      const code = String(roh || '').replace(/\D/g, '');
+      /* Lebensmittel-Barcodes sind typischerweise EAN/UPC mit 8–14 Ziffern. */
+      if (code.length < 8 || code.length > 14) return;
+
+      ui.scannerLauf = false; // verhindert Mehrfachtreffer desselben Barcodes
+      const feld = document.getElementById('barcodeFeld');
+      if (feld) feld.value = code;
+      status.textContent = 'Barcode erkannt: ' + code;
+
+      try { controls.stop(); } catch (e) {}
+      ui.scannerSteuerung = null;
+      bereich.classList.add('versteckt');
+      await barcodeProduktLaden(code);
+    });
+
+    /* Scan kann schon während await erfolgreich gewesen sein. */
+    if (ui.scannerLauf) ui.scannerSteuerung = steuerung;
+    else { try { steuerung.stop(); } catch (e) {} }
   } catch (e) {
     scannerStoppen();
     status.className = 'barcode-status fehler';
-    status.textContent = 'Kamera konnte nicht geöffnet werden. Prüfe die Kameraberechtigung für diese Website.';
+    const name = e?.name || '';
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError')
+      status.textContent = 'Kamerazugriff wurde nicht erlaubt. Erlaube die Kamera in Safari für diese Website.';
+    else if (name === 'NotFoundError' || name === 'DevicesNotFoundError')
+      status.textContent = 'Keine Kamera gefunden.';
+    else
+      status.textContent = 'Kamera konnte nicht geöffnet werden. Lade die Seite neu oder nutze die manuelle Barcode-Eingabe.';
   }
 }
 
