@@ -247,6 +247,7 @@ svg.chart { width: 100%; height: 180px; margin-top: 12px; display: block; }
    Doppelpunkt ändern.
    ================================================================== */
 const KONFIG = {
+  VERSION: "0.1",            // Versionsnummer der App – bei Änderungen hochzählen (z. B. "0.2")
   STANDARD_SAETZE: 3,        // Arbeitssätze für neue Geräte
   STANDARD_WDH: 10,          // Ziel-Wiederholungen für neue Geräte
   STANDARD_GEWICHT: 20,      // Startgewicht in kg für neue Geräte
@@ -449,7 +450,8 @@ function htmlTrainingStart() {
   h += `<button class="plankarte frei" data-start="alle">
       <div class="name" style="font-size:15px">Freies Training</div>
       <div class="info" style="color:var(--leise)">Alle ${daten.geraete.length} Geräte, ohne Plan</div></button>
-    <button class="knopf2" data-planneu="1">+ Neuen Plan anlegen</button>`;
+    <button class="knopf2" data-planneu="1">+ Neuen Plan anlegen</button>
+    <div style="text-align:center;color:var(--leise);font-size:11px;margin-top:18px">Version ${KONFIG.VERSION}</div>`;
   return h;
 }
 
