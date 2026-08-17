@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<!-- Bildschirm füllen, kein Zoomen, Bereich um die iPhone-Kamera mitnutzen -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+<!-- Damit die App vom Home-Bildschirm im Vollbild startet -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Training">
+<meta name="theme-color" content="#0A0A0C">
+<title>Training</title>
+
+<!--
+==================================================================
+  TRAININGS-APP  –  eigenständige Version
+==================================================================
+  Diese Datei ist komplett eigenständig: kein Internet nötig,
+  keine externen Bibliotheken. Einfach irgendwo ablegen
+  (Webserver, Vercel, Netlify, Caddy) oder direkt im Browser
+  öffnen.
+
+  Deine Daten werden im Browser gespeichert (localStorage) und
+  bleiben dort, bis du sie löschst. Wichtig: Die Daten hängen an
+  dem Browser bzw. Gerät, mit dem du die App öffnest. Zum
+  Umziehen gibt es unter "Pläne & Geräte" den Export/Import.
+
+  ANPASSEN: Alles Wichtige steht ganz oben im Abschnitt
+  KONFIGURATION (Zahlen) und im Abschnitt FARBEN (Aussehen).
+==================================================================
+-->
+
+<style>
+/* ==================================================================
+   FARBEN – hier kannst du das Aussehen der App ändern.
+   Einfach den Farbwert (z. B. #E10600) austauschen.
+   ================================================================== */
+:root {
+  --hintergrund: #0A0A0C;   /* Seitenhintergrund (fast schwarz) */
+  --karte:       #141418;   /* Hintergrund der Kästen */
+  --kante:       #232328;   /* Dünne Linien und Ränder */
+  --text:        #F5F5F7;   /* Haupttext (fast weiß) */
+  --leise:       #8E8E93;   /* Gedämpfter Text (Beschriftungen) */
+  --akzent:      #E10600;   /* Rot: Timer, wichtige Knöpfe */
+  --gruen:       #30D158;   /* Grün: erledigte Sätze */
+  --blau:        #0A84FF;   /* Blau: Körpergewichts-Diagramm */
+  --gelb:        #FFD60A;   /* Gelb: Warm-up-Sätze, Notizen */
+}
+
+/* ---------- Grundgerüst ---------- */
+* {
+  box-sizing: border-box;
+  touch-action: manipulation;              /* kein Doppeltipp-Zoom */
+  -webkit-tap-highlight-color: transparent;/* kein graues Aufblitzen */
+}
+html, body {
+  margin: 0; padding: 0;
+  background: var(--hintergrund);
+  color: var(--text);
+  font-family: -apple-system, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+  overscroll-behavior: none;               /* kein Gummiband-Scrollen */
+  -webkit-text-size-adjust: 100%;          /* Schrift nicht automatisch skalieren */
+}
+/* Die kleinen Pfeilchen in Zahlenfeldern ausblenden */
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input[type=number] { -moz-appearance: textfield; }
+
+header { padding: calc(24px + env(safe-area-inset-top)) 20px 12px; }
+header .klein { font-size: 12px; letter-spacing: 3px; color: var(--leise); text-transform: uppercase; }
+header .gross { font-size: 26px; font-weight: 700; letter-spacing: -.5px; }
+
+main {
+  padding: 8px 20px 110px;   /* unten Platz für die Reiter-Leiste */
+  max-width: 560px; width: 100%; margin: 0 auto;
+}
+
+/* ---------- Kästen und Etiketten ---------- */
+.karte {
+  background: var(--karte); border: 1px solid var(--kante);
+  border-radius: 16px; padding: 16px; margin-bottom: 12px;
+}
+.zeile { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.titel { font-weight: 600; font-size: 16px; }
+.unter { font-size: 12px; color: var(--leise); margin-top: 3px; }
+.notiz { font-size: 12px; color: var(--gelb); margin-top: 4px; }
+.abschnitt {
+  font-size: 12px; letter-spacing: 2px; color: var(--leise);
+  text-transform: uppercase; margin: 22px 0 10px;
+}
+.badge {
+  display: inline-block; font-size: 10px; font-weight: 700;
+  color: var(--akzent); border: 1px solid var(--akzent);
+  border-radius: 6px; padding: 3px 8px; margin: 2px 6px 0 0;
+}
+.badge.grau { color: var(--leise); border-color: var(--kante); }
+
+/* ---------- Knöpfe ---------- */
+button { font-family: inherit; cursor: pointer; }
+.knopf {
+  display: block; width: 100%; padding: 16px; border-radius: 14px; border: none;
+  background: var(--akzent); color: #fff; font-size: 16px; font-weight: 700; margin-top: 12px;
+}
+.knopf2 {
+  display: block; width: 100%; padding: 13px; border-radius: 14px;
+  border: 1px solid var(--kante); background: transparent; color: var(--text);
+  font-size: 15px; margin-top: 10px;
+}
+.knopf2.rot { color: var(--akzent); border-color: transparent; }
+.mini {
+  width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--kante);
+  background: transparent; color: var(--text); font-size: 18px; flex: 0 0 auto;
+}
+/* Große Plan-Karten auf dem Startbildschirm */
+.plankarte {
+  display: block; width: 100%; text-align: left; padding: 18px 20px;
+  border-radius: 16px; border: 1px solid var(--kante); background: var(--karte);
+  color: var(--text); margin-bottom: 12px;
+}
+.plankarte.empfohlen { background: var(--akzent); border-color: var(--akzent); color: #fff; }
+.plankarte.frei { background: transparent; border-style: dashed; }
+.plankarte .name { font-size: 17px; font-weight: 700; }
+.plankarte .info { font-size: 12px; opacity: .8; margin-top: 3px; }
+.plankarte:disabled { opacity: .45; }
+
+/* Satz-Knöpfe im Training */
+.saetze { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.satz {
+  width: 46px; height: 46px; border-radius: 12px; border: 1.5px solid var(--kante);
+  background: transparent; color: var(--text); font-size: 16px; font-weight: 700;
+}
+.satz.fertig { background: var(--gruen); border-color: var(--gruen); color: #000; }
+.satz.warm { border-color: var(--gelb); color: var(--gelb); }
+.satz.warm.fertig { background: var(--gelb); color: #000; }
+
+/* Fortschrittsbalken */
+.balken { height: 4px; background: var(--kante); border-radius: 2px; overflow: hidden; margin-bottom: 6px; }
+.balken > div { height: 100%; background: var(--gruen); transition: width .3s; }
+
+/* ---------- Reiter-Leiste unten ---------- */
+nav {
+  position: fixed; bottom: 0; left: 0; right: 0; display: flex;
+  background: rgba(10,10,12,.92); backdrop-filter: blur(12px);
+  border-top: 1px solid var(--kante);
+}
+nav button {
+  flex: 1; padding: 14px 0 calc(18px + env(safe-area-inset-bottom));
+  background: none; border: none; border-top: 2px solid transparent;
+  color: var(--leise); font-size: 12px; font-weight: 600;
+}
+nav button.aktiv { color: var(--text); border-top-color: var(--akzent); }
+
+/* ---------- Eingabefelder ---------- */
+label.feld { display: block; font-size: 12px; color: var(--leise); margin: 12px 0 6px; }
+input, select, textarea {
+  width: 100%; padding: 12px 14px; border-radius: 12px;
+  border: 1px solid var(--kante); background: var(--hintergrund); color: var(--text);
+  /* WICHTIG: mindestens 16px, sonst zoomt das iPhone beim Antippen hinein */
+  font-size: 16px; font-family: inherit;
+}
+.spalten { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+/* Plan-Auswahl im Geräte-Formular */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  padding: 10px 16px; border-radius: 12px; border: 1px solid var(--kante);
+  background: transparent; color: var(--text); font-size: 14px;
+}
+.chip.aktiv { border-color: var(--akzent); background: rgba(225,6,0,.12); color: var(--akzent); font-weight: 700; }
+
+/* ---------- Vollbild-Fenster (Timer, Zusammenfassung) ---------- */
+#overlay {
+  position: fixed; inset: 0; background: rgba(10,10,12,.96); z-index: 50;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+  padding: 20px; text-align: center;
+}
+.timerzahl { font-size: 96px; font-weight: 800; letter-spacing: -2px; color: var(--akzent); font-variant-numeric: tabular-nums; }
+
+/* ---------- Formular-Fenster von unten ---------- */
+#sheet { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 60; display: flex; align-items: flex-end; justify-content: center; }
+#sheet > div {
+  background: var(--karte); border-radius: 22px 22px 0 0; padding: 22px 20px calc(30px + env(safe-area-inset-bottom));
+  width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto;
+}
+/* ---------- Hinweisbalken für die Sicherung ---------- */
+.erinnerung {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: rgba(255,214,10,.10); border: 1px solid var(--gelb);
+  border-radius: 14px; padding: 12px 14px; margin-bottom: 14px;
+}
+.erinnerung .mini { height: 34px; }
+
+.versteckt { display: none !important; }
+
+/* ---------- Statistik ---------- */
+.kacheln { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.kachel { text-align: center; padding: 18px 10px; }
+.kachel .wert { font-size: 22px; font-weight: 800; }
+.kachel .text { font-size: 11px; color: var(--leise); margin-top: 4px; }
+svg.chart { width: 100%; height: 180px; margin-top: 12px; display: block; }
+.hinweis { font-size: 12px; color: var(--leise); text-align: center; margin-top: 10px; line-height: 1.5; }
+</style>
+</head>
+
+<body>
+<div id="wurzel">
+  <header><div class="klein" id="kopfKlein"></div><div class="gross" id="kopfGross"></div></header>
+  <main id="inhalt"></main>
+  <nav id="nav"></nav>
+</div>
+<div id="overlay" class="versteckt"></div>
+<div id="sheet" class="versteckt"></div>
+
+<script>
+/* ==================================================================
+   KONFIGURATION
+   Hier kannst du die App anpassen: nur die Werte hinter dem
+   Doppelpunkt ändern.
+   ================================================================== */
+const KONFIG = {
+  STANDARD_SAETZE: 3,        // Arbeitssätze für neue Geräte
+  STANDARD_WDH: 10,          // Ziel-Wiederholungen für neue Geräte
+  STANDARD_GEWICHT: 20,      // Startgewicht in kg für neue Geräte
+  STANDARD_PAUSE: 90,        // Pausenzeit in Sekunden für neue Geräte
+  STANDARD_AUFWAERM: 1,      // Warm-up-Sätze für neue Geräte (0 = keine)
+  GEWICHT_SCHRITT: 2.5,      // Schrittweite der +/- Knöpfe in kg
+  PROGRESSION_SCHRITT: 2.5,  // Automatische Gewichtserhöhung in kg
+  AUTO_PROGRESSION: true,    // true = Gewicht automatisch erhöhen, false = nur Vorschlag
+  PAUSE_EXTRA: 30,           // Sekunden, die der "+30s"-Knopf hinzufügt
+  TON_AM_ENDE: true,         // Piepton am Ende der Pause
+  VIBRIEREN: true,           // Kurzes Vibrieren am Ende der Pause (Android)
+  ERSTER_PLAN_NAME: "Ganzkörper", // Plan, der beim ersten Start angelegt wird
+  SPEICHER_SCHLUESSEL: "training-app-daten", // Name des Speicherplatzes im Browser
+  ERINNERN_TAGE: 7,          // Nach so vielen Tagen ohne Sicherung erinnert die App
+  ERINNERN_TRAININGS: 5,     // Oder nach so vielen Trainings seit der letzten Sicherung
+};
+
+/* Muskelgruppen zur Auswahl – Einträge frei änderbar */
+const MUSKELGRUPPEN = ["Brust","Rücken","Beine","Schultern","Bizeps","Trizeps","Bauch","Ganzkörper"];
+
+/* ==================================================================
+   DATEN & SPEICHER
+   ================================================================== */
+/* Alle Daten der App an einem Ort */
+let daten = { plaene: [], geraete: [], verlauf: [], koerpergewicht: [] };
+
+/* Zustand, der nicht gespeichert wird (nur während der Nutzung) */
+let ui = {
+  tab: "training",     // Aktiver Reiter
+  training: null,      // Läuft gerade ein Training?
+  timer: null,         // Restsekunden der Pause (null = keine Pause)
+  timerLauf: null,     // Interner Zähler
+  chartGeraet: "",     // Gewähltes Gerät im Diagramm
+};
+
+/* Daten aus dem Browser-Speicher laden */
+function laden() {
+  try {
+    const roh = localStorage.getItem(KONFIG.SPEICHER_SCHLUESSEL);
+    if (roh) daten = Object.assign(daten, JSON.parse(roh));
+  } catch (e) { console.warn("Laden fehlgeschlagen", e); }
+  startPlanSicherstellen();
+}
+
+/* Falls noch kein Plan vorhanden ist: einen Startplan anlegen
+   und alle vorhandenen Geräte hineinlegen. */
+function startPlanSicherstellen() {
+  if (!daten.plaene || daten.plaene.length === 0) {
+    const p = { id: neueId(), name: KONFIG.ERSTER_PLAN_NAME };
+    daten.plaene = [p];
+    daten.geraete = (daten.geraete || []).map(g => ({ ...g, planIds: g.planIds || [p.id] }));
+  }
+}
+
+/* Daten im Browser speichern (passiert nach jeder Änderung) */
+function speichern() {
+  try {
+    localStorage.setItem(KONFIG.SPEICHER_SCHLUESSEL, JSON.stringify(daten));
+  } catch (e) {
+    console.warn("Speichern fehlgeschlagen", e);
+  }
+}
+
+/* ==================================================================
+   KLEINE HILFSFUNKTIONEN
+   ================================================================== */
+const neueId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const zeitFormat = s => Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+const datumKurz = iso => new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+
+/* Text sicher machen, damit z. B. ein "<" im Gerätenamen nichts kaputt macht */
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/* "vor 3 Tagen" für die Plan-Übersicht */
+function vorTagen(iso) {
+  if (!iso) return "noch nie trainiert";
+  const tage = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (tage <= 0) return "heute";
+  if (tage === 1) return "gestern";
+  return "vor " + tage + " Tagen";
+}
+
+/* Signal am Ende der Pause: Ton + kurzes Vibrieren */
+function signal() {
+  if (KONFIG.VIBRIEREN && navigator.vibrate) navigator.vibrate([120, 60, 120]);
+  if (!KONFIG.TON_AM_ENDE) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = 880; gain.gain.value = .15;
+    osc.start(); osc.stop(ctx.currentTime + .4);
+  } catch (e) {}
+}
+
+/* Geräte eines Plans. planId = "alle" bedeutet freies Training. */
+const geraeteFuerPlan = planId =>
+  planId === "alle" ? daten.geraete : daten.geraete.filter(g => (g.planIds || []).includes(planId));
+
+/* Wann wurde ein Plan zuletzt trainiert? */
+const letztesTraining = planId => (daten.verlauf.find(v => v.planId === planId) || {}).datum || null;
+
+/* Welcher Plan war am längsten nicht dran? (wird empfohlen) */
+function empfohlenerPlan() {
+  let beste = null, aeltest = Infinity;
+  daten.plaene.forEach(p => {
+    if (geraeteFuerPlan(p.id).length === 0) return;
+    const letzte = letztesTraining(p.id);
+    const zeit = letzte ? new Date(letzte).getTime() : 0; // nie trainiert = höchste Priorität
+    if (zeit < aeltest) { aeltest = zeit; beste = p.id; }
+  });
+  return beste;
+}
+
+/* ==================================================================
+   SICHERUNGS-ERINNERUNG
+   ------------------------------------------------------------------
+   Die App merkt sich, wann du zuletzt gesichert hast und wie viele
+   Trainings seitdem dazugekommen sind. Ist eines von beidem über
+   der Grenze (siehe KONFIG), erscheint oben ein Hinweisbalken mit
+   einem Knopf, der die Sicherungsdatei mit einem Tipp erzeugt.
+   ================================================================== */
+
+/* Ist eine Sicherung fällig? */
+function sicherungFaellig() {
+  if (ui.erinnerungAus) return false;              // Nutzer hat "Später" gedrückt
+  if (daten.verlauf.length === 0) return false;    // Noch nichts zu sichern
+  if (!daten.letzteSicherung) return true;         // Noch nie gesichert
+  const tage = (Date.now() - new Date(daten.letzteSicherung).getTime()) / 86400000;
+  return tage >= KONFIG.ERINNERN_TAGE
+      || (daten.trainingsSeitSicherung || 0) >= KONFIG.ERINNERN_TRAININGS;
+}
+
+/* Text für die Anzeige, z. B. "vor 12 Tagen" */
+function sicherungStand() {
+  if (!daten.letzteSicherung) return "noch nie gesichert";
+  return "zuletzt " + vorTagen(daten.letzteSicherung);
+}
+
+/* Hinweisbalken oben auf dem Bildschirm */
+function htmlErinnerung() {
+  if (!sicherungFaellig()) return "";
+  const anzahl = daten.trainingsSeitSicherung || 0;
+  return `<div class="erinnerung">
+    <div>
+      <div style="font-weight:600;font-size:14px">Sicherung empfohlen</div>
+      <div style="font-size:12px;opacity:.85;margin-top:2px">
+        ${sicherungStand()}${anzahl ? " · " + anzahl + " Trainings seitdem" : ""}</div>
+    </div>
+    <div style="display:flex;gap:8px;flex:0 0 auto">
+      <button class="mini" data-spaeter="1" style="width:auto;padding:0 12px;font-size:13px">Später</button>
+      <button class="mini" data-download="1" style="width:auto;padding:0 14px;font-size:13px;border-color:var(--gruen);color:var(--gruen)">Sichern</button>
+    </div>
+  </div>`;
+}
+
+/* ==================================================================
+   ANZEIGE: Alles neu zeichnen
+   ================================================================== */
+function zeichnen() {
+  const t = ui.training;
+  document.getElementById("kopfKlein").textContent = t ? t.planName : "Krafttraining";
+  document.getElementById("kopfGross").textContent = t ? "Läuft…" : "Training";
+
+  const inhalt = document.getElementById("inhalt");
+  /* Der Hinweisbalken erscheint überall außer im laufenden Training,
+     damit er beim Trainieren nicht stört. */
+  const erinnerung = t ? "" : htmlErinnerung();
+  if (ui.tab === "training") inhalt.innerHTML = erinnerung + (t ? htmlTrainingLaeuft() : htmlTrainingStart());
+  else if (ui.tab === "geraete") inhalt.innerHTML = erinnerung + htmlGeraete();
+  else if (ui.tab === "statistik") inhalt.innerHTML = erinnerung + htmlStatistik();
+  else inhalt.innerHTML = erinnerung + htmlVerlauf();
+
+  /* Reiter-Leiste */
+  const reiter = [["training","Training"],["geraete","Pläne & Geräte"],["statistik","Statistik"],["verlauf","Verlauf"]];
+  document.getElementById("nav").innerHTML = reiter.map(([id, name]) =>
+    `<button data-tab="${id}" class="${ui.tab === id ? "aktiv" : ""}">${name}</button>`).join("");
+}
+
+/* ---------- Startbildschirm mit Plan-Auswahl ---------- */
+function htmlTrainingStart() {
+  if (daten.geraete.length === 0) {
+    return `<div style="text-align:center;padding-top:30px">
+      <p style="color:var(--leise);line-height:1.6">Noch keine Geräte angelegt.<br>Lege unter „Pläne &amp; Geräte" dein erstes Gerät an.</p>
+      <button class="knopf2" data-tab="geraete">Zu den Geräten</button></div>`;
+  }
+  const empf = empfohlenerPlan();
+  let h = `<div style="font-size:13px;color:var(--leise);margin:6px 0 12px">Wähle deinen Plan für heute</div>`;
+
+  h += daten.plaene.map(p => {
+    const anzahl = geraeteFuerPlan(p.id).length;
+    const ist = p.id === empf;
+    return `<button class="plankarte ${ist ? "empfohlen" : ""}" data-start="${p.id}" ${anzahl === 0 ? "disabled" : ""}>
+      <div class="name">${esc(p.name)}${ist ? " ★" : ""}</div>
+      <div class="info">${anzahl === 0 ? "Keine Geräte zugeordnet"
+        : anzahl + " Geräte · zuletzt " + vorTagen(letztesTraining(p.id))}</div></button>`;
+  }).join("");
+
+  h += `<button class="plankarte frei" data-start="alle">
+      <div class="name" style="font-size:15px">Freies Training</div>
+      <div class="info" style="color:var(--leise)">Alle ${daten.geraete.length} Geräte, ohne Plan</div></button>
+    <button class="knopf2" data-planneu="1">+ Neuen Plan anlegen</button>`;
+  return h;
+}
+
+/* ---------- Laufendes Training ---------- */
+function htmlTrainingLaeuft() {
+  const t = ui.training;
+  const alle = Object.values(t.fortschritt).flatMap(f => f.saetze);
+  const prozent = alle.length ? Math.round(alle.filter(w => w !== null).length / alle.length * 100) : 0;
+
+  let h = `<div class="balken"><div style="width:${prozent}%"></div></div>
+    <div style="font-size:12px;color:var(--leise);margin-bottom:8px">
+      ${prozent}% geschafft · 1× tippen = Ziel-Wdh, weiter tippen = weniger Wdh</div>`;
+
+  h += geraeteFuerPlan(t.planId).map(g => {
+    const f = t.fortschritt[g.id];
+    if (!f) return "";
+    const fertig = f.saetze.every(w => w !== null) && f.aufwaerm.every(Boolean);
+    /* Warm-up-Knöpfe */
+    const warm = f.aufwaerm.map((e, i) =>
+      `<button class="satz warm ${e ? "fertig" : ""}" data-warm="${g.id}" data-i="${i}">W</button>`).join("");
+    /* Arbeitssatz-Knöpfe */
+    const saetze = f.saetze.map((w, i) =>
+      `<button class="satz ${w !== null ? "fertig" : ""}" data-satz="${g.id}" data-i="${i}">${w !== null ? w : i + 1}</button>`).join("");
+
+    return `<div class="karte" style="opacity:${fertig ? .55 : 1}">
+      <div class="zeile" style="align-items:baseline">
+        <div>
+          <div class="titel">${esc(g.name)}</div>
+          <div class="unter">Ziel ${g.saetze}×${g.wdh} · Pause ${zeitFormat(g.pause)}</div>
+          ${g.notiz ? `<div class="notiz">📝 ${esc(g.notiz)}</div>` : ""}
+        </div>
+        <div class="zeile" style="gap:8px">
+          <button class="mini" data-kg="${g.id}" data-d="-1">−</button>
+          <span style="font-weight:700;min-width:56px;text-align:center">${g.gewicht} kg</span>
+          <button class="mini" data-kg="${g.id}" data-d="1">+</button>
+        </div>
+      </div>
+      <div class="saetze">${warm}${saetze}</div></div>`;
+  }).join("");
+
+  h += `<button class="knopf2" data-beenden="1" style="padding:16px;font-weight:700">Training beenden</button>`;
+  return h;
+}
+
+/* ---------- Reiter "Pläne & Geräte" ---------- */
+function htmlGeraete() {
+  let h = `<div class="abschnitt" style="margin-top:4px">Meine Pläne</div>`;
+  h += daten.plaene.map((p, i) => `<div class="karte" style="padding:14px"><div class="zeile">
+      <div style="flex:1" data-planbearbeiten="${p.id}">
+        <div class="titel" style="font-size:15px">${esc(p.name)}</div>
+        <div class="unter">${geraeteFuerPlan(p.id).length} Geräte · zuletzt ${vorTagen(letztesTraining(p.id))}</div>
+      </div>
+      <button class="mini" data-planhoch="${i}">↑</button>
+      <button class="mini" data-planrunter="${i}">↓</button>
+    </div></div>`).join("");
+  h += `<button class="knopf2" data-planneu="1">+ Neuer Plan</button>`;
+
+  h += `<div class="abschnitt">Meine Geräte</div>`;
+  h += daten.geraete.map((g, i) => {
+    const namen = (g.planIds || []).map(id => (daten.plaene.find(p => p.id === id) || {}).name).filter(Boolean);
+    const badges = namen.length === 0
+      ? `<span class="badge grau">keinem Plan zugeordnet</span>`
+      : namen.map(n => `<span class="badge">${esc(n)}</span>`).join("");
+    return `<div class="karte"><div class="zeile">
+      <div style="flex:1" data-geraetbearbeiten="${g.id}">
+        <div class="titel">${esc(g.name)}</div>
+        <div class="unter">${esc(g.muskelgruppe)} · ${g.saetze}×${g.wdh} · ${g.gewicht} kg · Pause ${zeitFormat(g.pause)}${g.aufwaerm > 0 ? " · " + g.aufwaerm + " Warm-up" : ""}</div>
+        <div style="margin-top:6px">${badges}</div>
+        ${g.notiz ? `<div class="notiz">📝 ${esc(g.notiz)}</div>` : ""}
+      </div>
+      <button class="mini" data-geraethoch="${i}">↑</button>
+      <button class="mini" data-geraetrunter="${i}">↓</button>
+    </div></div>`;
+  }).join("");
+
+  h += `<button class="knopf" data-geraetneu="1">+ Neues Gerät</button>
+
+    <button class="knopf2" data-export="1">Daten sichern / wiederherstellen</button>
+    <p class="hinweis">Tippe auf einen Plan oder ein Gerät, um ihn zu bearbeiten.</p>`;
+  return h;
+}
+
+/* ---------- Reiter "Statistik" ---------- */
+function htmlStatistik() {
+  const vorWoche = Date.now() - 7 * 86400000;
+  const dieseWoche = daten.verlauf.filter(v => new Date(v.datum).getTime() > vorWoche).length;
+  const oDauer = daten.verlauf.length
+    ? Math.round(daten.verlauf.reduce((s, v) => s + v.dauerMin, 0) / daten.verlauf.length) : 0;
+
+  let h = `<div class="kacheln">
+    ${kachel(dieseWoche, "Trainings diese Woche")}
+    ${kachel(daten.verlauf.length, "Trainings gesamt")}
+    ${kachel(daten.verlauf[0] ? daten.verlauf[0].volumen + " kg" : "–", "Letztes Volumen")}
+    ${kachel(oDauer ? oDauer + " min" : "–", "Ø Dauer")}
+  </div>`;
+
+  /* Gewichtsverlauf pro Gerät */
+  const punkte = [];
+  if (ui.chartGeraet) {
+    [...daten.verlauf].reverse().forEach(v => {
+      const g = (v.geraete || []).find(x => x.id === ui.chartGeraet);
+      if (g) punkte.push({ label: datumKurz(v.datum), wert: g.gewicht });
+    });
+  }
+  h += `<div class="karte" style="margin-top:16px">
+    <div class="titel" style="margin-bottom:10px">Gewichtsverlauf pro Gerät</div>
+    <select id="chartWahl"><option value="">Gerät wählen…</option>
+      ${daten.geraete.map(g => `<option value="${g.id}" ${ui.chartGeraet === g.id ? "selected" : ""}>${esc(g.name)}</option>`).join("")}
+    </select>
+    ${ui.chartGeraet
+      ? (punkte.length > 1 ? diagramm(punkte, "var(--gruen)")
+        : `<p class="hinweis">Noch zu wenige Trainings mit diesem Gerät für ein Diagramm.</p>`)
+      : ""}
+  </div>`;
+
+  /* Körpergewicht */
+  const kgPunkte = daten.koerpergewicht.map(e => ({ label: datumKurz(e.datum), wert: e.kg }));
+  h += `<div class="karte">
+    <div class="titel" style="margin-bottom:10px">Körpergewicht</div>
+    <div style="display:flex;gap:10px">
+      <input id="kgFeld" type="number" inputmode="decimal" step="0.1" placeholder="z. B. 82,4" style="flex:1">
+      <button class="knopf" data-kgspeichern="1" style="width:auto;margin:0;padding:0 22px">Eintragen</button>
+    </div>
+    ${kgPunkte.length > 1 ? diagramm(kgPunkte, "var(--blau)") : ""}
+    ${daten.koerpergewicht.length ? `<div class="unter">Aktuell: ${daten.koerpergewicht[daten.koerpergewicht.length - 1].kg} kg</div>` : ""}
+  </div>`;
+  return h;
+}
+
+const kachel = (wert, text) =>
+  `<div class="karte kachel" style="margin:0"><div class="wert">${wert}</div><div class="text">${text}</div></div>`;
+
+/* Einfaches Liniendiagramm als SVG (ohne externe Bibliothek) */
+function diagramm(punkte, farbe) {
+  const B = 300, H = 150, rand = 28;           // Breite, Höhe, Rand für Beschriftung
+  const werte = punkte.map(p => p.wert);
+  const min = Math.min(...werte), max = Math.max(...werte);
+  const spanne = (max - min) || 1;
+  const x = i => rand + i * (B - rand - 6) / Math.max(1, punkte.length - 1);
+  const y = w => H - 20 - (w - min) / spanne * (H - 42);
+
+  const linie = punkte.map((p, i) => x(i) + "," + y(p.wert)).join(" ");
+  const kreise = punkte.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.wert)}" r="3" fill="${farbe}"/>`).join("");
+  /* Beschriftung: nur erster, mittlerer und letzter Punkt, damit es lesbar bleibt */
+  const zeigen = [0, Math.floor(punkte.length / 2), punkte.length - 1];
+  const xText = zeigen.map(i => `<text x="${x(i)}" y="${H - 4}" fill="#8E8E93" font-size="9" text-anchor="middle">${punkte[i].label}</text>`).join("");
+
+  return `<svg class="chart" viewBox="0 0 ${B} ${H}" preserveAspectRatio="none">
+    <line x1="${rand}" y1="${y(max)}" x2="${B - 6}" y2="${y(max)}" stroke="#232328"/>
+    <line x1="${rand}" y1="${y(min)}" x2="${B - 6}" y2="${y(min)}" stroke="#232328"/>
+    <text x="2" y="${y(max) + 3}" fill="#8E8E93" font-size="9">${max}</text>
+    <text x="2" y="${y(min) + 3}" fill="#8E8E93" font-size="9">${min}</text>
+    <polyline points="${linie}" fill="none" stroke="${farbe}" stroke-width="2.5" stroke-linejoin="round"/>
+    ${kreise}${xText}</svg>`;
+}
+
+/* ---------- Reiter "Verlauf" ---------- */
+function htmlVerlauf() {
+  if (daten.verlauf.length === 0)
+    return `<p class="hinweis" style="padding-top:40px">Noch keine abgeschlossenen Trainings.</p>`;
+
+  return daten.verlauf.map(v => `<div class="karte">
+    <div class="zeile">
+      <div class="titel" style="font-size:15px">${new Date(v.datum).toLocaleDateString("de-DE",
+        { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })}</div>
+      <div class="unter" style="margin:0">${v.dauerMin} min</div>
+    </div>
+    ${v.planName ? `<div style="margin-top:5px"><span class="badge">${esc(v.planName)}</span></div>` : ""}
+    <div class="unter">${v.saetzeErledigt}/${v.saetzeGesamt} Sätze · Volumen ${v.volumen ?? "–"} kg</div>
+    ${(v.geraete || []).map(g => `<div class="unter">${esc(g.name)}: ${g.gewicht} kg · ${g.wdh.map(w => w === null ? "–" : w).join(" / ")}</div>`).join("")}
+  </div>`).join("");
+}
+
+/* ==================================================================
+   TRAINING: Ablauf
+   ================================================================== */
+function trainingStarten(planId) {
+  const plan = daten.plaene.find(p => p.id === planId);
+  const fortschritt = {};
+  geraeteFuerPlan(planId).forEach(g => {
+    fortschritt[g.id] = {
+      aufwaerm: Array(g.aufwaerm || 0).fill(false),   // Warm-up: erledigt ja/nein
+      saetze: Array(g.saetze).fill(null),             // null = offen, Zahl = geschaffte Wdh
+    };
+  });
+  ui.training = { start: Date.now(), planId, planName: plan ? plan.name : "Freies Training", fortschritt };
+  ui.tab = "training";
+  zeichnen();
+}
+
+/* Warm-up-Satz abhaken (zählt nicht zur Progression) */
+function warmTippen(gId, i) {
+  const f = ui.training.fortschritt[gId];
+  const war = f.aufwaerm[i];
+  f.aufwaerm[i] = !war;
+  if (!war) pauseStarten(daten.geraete.find(g => g.id === gId).pause);
+  zeichnen();
+}
+
+/* Arbeitssatz antippen:
+   1. Tipp = geschafft mit Ziel-Wdh (Pause startet)
+   weitere Tipps = Wiederholungen runterzählen
+   Tipp bei 0 = zurück auf "offen" */
+function satzTippen(gId, i) {
+  const g = daten.geraete.find(x => x.id === gId);
+  const f = ui.training.fortschritt[gId];
+  const w = f.saetze[i];
+  if (w === null) { f.saetze[i] = g.wdh; pauseStarten(g.pause); }
+  else if (w > 0) { f.saetze[i] = w - 1; }
+  else { f.saetze[i] = null; }
+  zeichnen();
+}
+
+/* Gewicht während des Trainings ändern (dauerhaft gespeichert) */
+function gewichtAendern(gId, richtung) {
+  const g = daten.geraete.find(x => x.id === gId);
+  g.gewicht = Math.max(0, Math.round((g.gewicht + richtung * KONFIG.GEWICHT_SCHRITT) * 10) / 10);
+  speichern(); zeichnen();
+}
+
+/* Training beenden: Volumen berechnen, Progression prüfen, im Verlauf speichern */
+function trainingBeenden() {
+  const t = ui.training;
+  const ergebnisse = [], steigerungen = [];
+  let volumen = 0, erledigt = 0, gesamt = 0;
+
+  geraeteFuerPlan(t.planId).forEach(g => {
+    const f = t.fortschritt[g.id];
+    if (!f) return;
+    gesamt += f.saetze.length;
+    f.saetze.forEach(w => { if (w !== null) { erledigt++; volumen += g.gewicht * w; } });
+    ergebnisse.push({ id: g.id, name: g.name, gewicht: g.gewicht, wdh: f.saetze });
+
+    /* Doppelte Progression: alle Sätze gemacht UND überall Ziel-Wdh erreicht */
+    const alleGeschafft = f.saetze.length > 0 && f.saetze.every(w => w !== null && w >= g.wdh);
+    if (alleGeschafft) steigerungen.push({
+      id: g.id, name: g.name, alt: g.gewicht,
+      neu: Math.round((g.gewicht + KONFIG.PROGRESSION_SCHRITT) * 10) / 10,
+    });
+  });
+
+  if (KONFIG.AUTO_PROGRESSION) steigerungen.forEach(s => {
+    const g = daten.geraete.find(x => x.id === s.id);
+    if (g) g.gewicht = s.neu;
+  });
+
+  const dauerMin = Math.round((Date.now() - t.start) / 60000);
+  daten.verlauf.unshift({
+    datum: new Date().toISOString(), planId: t.planId, planName: t.planName,
+    dauerMin, saetzeErledigt: erledigt, saetzeGesamt: gesamt,
+    volumen: Math.round(volumen), geraete: ergebnisse,
+  });
+  /* Für die Sicherungserinnerung mitzählen */
+  daten.trainingsSeitSicherung = (daten.trainingsSeitSicherung || 0) + 1;
+  ui.erinnerungAus = false; // Nach einem Training wieder erinnern dürfen
+  speichern();
+
+  ui.training = null;
+  pauseBeenden();
+  zusammenfassungZeigen({ dauerMin, erledigt, gesamt, volumen: Math.round(volumen), steigerungen });
+  zeichnen();
+}
+
+/* ==================================================================
+   PAUSEN-TIMER
+   ================================================================== */
+function pauseStarten(sekunden) {
+  if (!sekunden) return;
+  ui.timer = sekunden;
+  clearInterval(ui.timerLauf);
+  ui.timerLauf = setInterval(() => {
+    ui.timer--;
+    if (ui.timer <= 0) { signal(); pauseBeenden(); return; }
+    timerZeichnen();
+  }, 1000);
+  timerZeichnen();
+}
+function pauseBeenden() {
+  clearInterval(ui.timerLauf);
+  ui.timer = null;
+  document.getElementById("overlay").classList.add("versteckt");
+}
+function timerZeichnen() {
+  const o = document.getElementById("overlay");
+  o.classList.remove("versteckt");
+  o.innerHTML = `<div style="font-size:13px;letter-spacing:3px;color:var(--leise);text-transform:uppercase">Pause</div>
+    <div class="timerzahl">${zeitFormat(ui.timer)}</div>
+    <div style="display:flex;gap:12px">
+      <button class="knopf2" data-timerplus="1" style="margin:0;padding:13px 22px">+${KONFIG.PAUSE_EXTRA}s</button>
+      <button class="knopf2" data-timerstop="1" style="margin:0;padding:13px 22px;color:var(--akzent);border-color:var(--akzent)">Überspringen</button>
+    </div>`;
+}
+
+/* Zusammenfassung nach dem Training */
+function zusammenfassungZeigen(z) {
+  const o = document.getElementById("overlay");
+  o.classList.remove("versteckt");
+  o.innerHTML = `<div style="font-size:22px;font-weight:800">Training beendet 💪</div>
+    <div style="color:var(--leise);line-height:1.8">${z.dauerMin} Minuten<br>${z.erledigt}/${z.gesamt} Sätze<br>Volumen: ${z.volumen} kg</div>
+    ${z.steigerungen.length ? `<div class="karte" style="width:85%;max-width:400px;text-align:left">
+      <div style="font-weight:700;color:var(--gruen);margin-bottom:8px">🎉 Progression${KONFIG.AUTO_PROGRESSION ? " (automatisch erhöht)" : "s-Vorschlag"}</div>
+      ${z.steigerungen.map(s => `<div style="font-size:14px;margin-top:4px">${esc(s.name)}: ${s.alt} kg → <b style="color:var(--gruen)">${s.neu} kg</b></div>`).join("")}
+    </div>` : ""}
+    ${sicherungFaellig() ? `<div style="color:var(--gelb);font-size:13px">Sicherung empfohlen · ${sicherungStand()}</div>
+      <button class="knopf2" data-download="1" style="width:auto;padding:12px 26px;margin:0;border-color:var(--gelb);color:var(--gelb)">Jetzt sichern</button>` : ""}
+    <button class="knopf" data-timerstop="1" style="width:auto;padding:14px 40px">Fertig</button>`;
+}
+
+/* ==================================================================
+   FORMULARE (Fenster von unten)
+   ================================================================== */
+const sheet = () => document.getElementById("sheet");
+function sheetSchliessen() { sheet().classList.add("versteckt"); sheet().innerHTML = ""; }
+function sheetOeffnen(html) { sheet().classList.remove("versteckt"); sheet().innerHTML = `<div>${html}</div>`; }
+
+/* ---------- Plan anlegen / bearbeiten ---------- */
+function planFormular(planId) {
+  const p = daten.plaene.find(x => x.id === planId);
+  const anzahl = p ? geraeteFuerPlan(p.id).length : 0;
+  sheetOeffnen(`
+    <div style="font-size:18px;font-weight:700;margin-bottom:6px">${p ? "Plan bearbeiten" : "Neuer Trainingsplan"}</div>
+    <p style="font-size:13px;color:var(--leise);line-height:1.5">
+      Gib dem Plan einen Namen, z. B. „Ganzkörper", „Oberkörper", „Push", „Pull" oder „Beine".
+      Welche Geräte dazugehören, legst du beim jeweiligen Gerät fest.</p>
+    <label class="feld">Name des Plans</label>
+    <input id="planName" value="${p ? esc(p.name) : ""}" placeholder="z. B. Ganzkörper">
+    <button class="knopf" data-plansichern="${p ? p.id : "neu"}">Speichern</button>
+    <button class="knopf2" data-abbrechen="1">Abbrechen</button>
+    ${p ? `<button class="knopf2 rot" data-planloeschen="${p.id}">Plan löschen</button>
+      <p class="hinweis">${anzahl} Geräte bleiben erhalten und verlieren nur diese Zuordnung.</p>` : ""}`);
+}
+
+function planSichern(id) {
+  const name = document.getElementById("planName").value.trim();
+  if (!name) return;
+  if (id === "neu") daten.plaene.push({ id: neueId(), name });
+  else { const p = daten.plaene.find(x => x.id === id); if (p) p.name = name; }
+  speichern(); sheetSchliessen(); zeichnen();
+}
+
+function planLoeschen(id) {
+  daten.plaene = daten.plaene.filter(p => p.id !== id);
+  /* Geräte behalten – sie verlieren nur die Zuordnung zu diesem Plan */
+  daten.geraete.forEach(g => { g.planIds = (g.planIds || []).filter(x => x !== id); });
+  speichern(); sheetSchliessen(); zeichnen();
+}
+
+/* ---------- Gerät anlegen / bearbeiten ---------- */
+function geraetFormular(geraetId) {
+  const g = daten.geraete.find(x => x.id === geraetId) || {
+    name: "", muskelgruppe: MUSKELGRUPPEN[0],
+    planIds: daten.plaene.length ? [daten.plaene[0].id] : [],
+    saetze: KONFIG.STANDARD_SAETZE, wdh: KONFIG.STANDARD_WDH,
+    gewicht: KONFIG.STANDARD_GEWICHT, pause: KONFIG.STANDARD_PAUSE,
+    aufwaerm: KONFIG.STANDARD_AUFWAERM, notiz: "",
+  };
+  const chips = daten.plaene.map(p => {
+    const aktiv = (g.planIds || []).includes(p.id);
+    return `<button class="chip ${aktiv ? "aktiv" : ""}" data-chip="${p.id}">${aktiv ? "✓ " : ""}${esc(p.name)}</button>`;
+  }).join("");
+
+  sheetOeffnen(`
+    <div style="font-size:18px;font-weight:700;margin-bottom:8px">${geraetId ? "Gerät bearbeiten" : "Neues Gerät"}</div>
+
+    <label class="feld">Name des Geräts</label>
+    <input id="fName" value="${esc(g.name)}" placeholder="z. B. Beinpresse">
+
+    <label class="feld">Muskelgruppe</label>
+    <select id="fMuskel">${MUSKELGRUPPEN.map(m =>
+      `<option ${g.muskelgruppe === m ? "selected" : ""}>${m}</option>`).join("")}</select>
+
+    <label class="feld">In welchen Plänen? (Mehrfachauswahl)</label>
+    ${daten.plaene.length ? `<div class="chips" id="fPlaene">${chips}</div>`
+      : `<p style="font-size:13px;color:var(--leise)">Noch keine Pläne angelegt. Das Gerät erscheint dann nur im freien Training.</p>`}
+
+    <div class="spalten">
+      <div><label class="feld">Arbeitssätze</label>
+        <input id="fSaetze" type="number" inputmode="numeric" min="1" value="${g.saetze}"></div>
+      <div><label class="feld">Ziel-Wiederholungen</label>
+        <input id="fWdh" type="number" inputmode="numeric" min="1" value="${g.wdh}"></div>
+      <div><label class="feld">Gewicht (kg)</label>
+        <input id="fGewicht" type="number" inputmode="decimal" min="0" step="0.5" value="${g.gewicht}"></div>
+      <div><label class="feld">Pause (Sek.)</label>
+        <input id="fPause" type="number" inputmode="numeric" min="0" step="15" value="${g.pause}"></div>
+      <div><label class="feld">Warm-up-Sätze</label>
+        <input id="fWarm" type="number" inputmode="numeric" min="0" value="${g.aufwaerm || 0}"></div>
+    </div>
+
+    <label class="feld">Notiz (z. B. Sitzeinstellung)</label>
+    <input id="fNotiz" value="${esc(g.notiz || "")}" placeholder="z. B. Sitz Stufe 4, enger Griff">
+
+    <button class="knopf" data-geraetsichern="${geraetId || "neu"}">Speichern</button>
+    <button class="knopf2" data-abbrechen="1">Abbrechen</button>
+    ${geraetId ? `<button class="knopf2 rot" data-geraetloeschen="${geraetId}">Gerät löschen</button>` : ""}`);
+
+  /* Beim Antippen eines Zahlenfeldes den Inhalt markieren,
+     damit man sofort eine neue Zahl tippen kann. */
+  sheet().querySelectorAll('input[type=number]').forEach(el =>
+    el.addEventListener("focus", () => el.select()));
+}
+
+/* Feldtext in eine gültige Zahl umwandeln.
+   Leeres Feld → Ersatzwert, zu kleine Werte → Mindestwert. */
+function zuZahl(text, min, ersatz) {
+  const zahl = parseFloat(String(text).replace(",", "."));
+  if (isNaN(zahl)) return ersatz;
+  return Math.max(min, zahl);
+}
+
+function geraetSichern(id) {
+  const name = document.getElementById("fName").value.trim();
+  if (!name) return;
+  /* Angehakte Pläne einsammeln */
+  const planIds = [...sheet().querySelectorAll(".chip.aktiv")].map(el => el.dataset.chip);
+
+  const neu = {
+    id: id === "neu" ? neueId() : id,
+    name,
+    muskelgruppe: document.getElementById("fMuskel").value,
+    planIds,
+    saetze:   Math.round(zuZahl(document.getElementById("fSaetze").value, 1, KONFIG.STANDARD_SAETZE)),
+    wdh:      Math.round(zuZahl(document.getElementById("fWdh").value, 1, KONFIG.STANDARD_WDH)),
+    gewicht:  zuZahl(document.getElementById("fGewicht").value, 0, 0),
+    pause:    Math.round(zuZahl(document.getElementById("fPause").value, 0, KONFIG.STANDARD_PAUSE)),
+    aufwaerm: Math.round(zuZahl(document.getElementById("fWarm").value, 0, 0)),
+    notiz: document.getElementById("fNotiz").value.trim(),
+  };
+
+  if (id === "neu") daten.geraete.push(neu);
+  else daten.geraete = daten.geraete.map(g => g.id === id ? neu : g);
+  speichern(); sheetSchliessen(); zeichnen();
+}
+
+function geraetLoeschen(id) {
+  daten.geraete = daten.geraete.filter(g => g.id !== id);
+  speichern(); sheetSchliessen(); zeichnen();
+}
+
+/* ---------- Daten sichern / wiederherstellen ---------- */
+function exportFormular() {
+  sheetOeffnen(`
+    <div style="font-size:18px;font-weight:700;margin-bottom:8px">Daten sichern &amp; wiederherstellen</div>
+    <p style="font-size:13px;color:var(--leise);line-height:1.5">
+      Stand: <b>${sicherungStand()}</b>${daten.trainingsSeitSicherung ? " · " + daten.trainingsSeitSicherung + " Trainings seitdem" : ""}<br>
+      <b>Sichern:</b> „Als Datei speichern" legt eine Sicherungsdatei ab. Am iPhone im Teilen-Fenster
+      „In Dateien sichern" wählen und einen iCloud-Ordner nehmen – dann liegt die Sicherung nicht nur auf dem Gerät.<br>
+      <b>Wiederherstellen:</b> Datei auswählen oder gesicherten Text hier einfügen und „Importieren" drücken.</p>
+    <button class="knopf2" data-download="1">Als Datei speichern</button>
+    <label class="feld">Sicherungsdatei laden</label>
+    <input type="file" id="importDatei" accept=".json,application/json">
+    <label class="feld">Oder Text</label>
+    <textarea id="exportText" style="height:180px;font-family:monospace">${esc(JSON.stringify(daten))}</textarea>
+    <p id="importFehler" class="hinweis versteckt" style="color:var(--akzent)">Import fehlgeschlagen: kein gültiger Daten-Export.</p>
+    <button class="knopf" data-import="1">Importieren</button>
+    <button class="knopf2" data-abbrechen="1">Schließen</button>`);
+
+  /* Datei-Auswahl: Inhalt direkt ins Textfeld laden */
+  document.getElementById("importDatei").addEventListener("change", e => {
+    const datei = e.target.files[0];
+    if (!datei) return;
+    const leser = new FileReader();
+    leser.onload = () => { document.getElementById("exportText").value = leser.result; };
+    leser.readAsText(datei);
+  });
+}
+
+/* Sicherungsdatei herunterladen und den Stand vermerken */
+function herunterladen() {
+  const blob = new Blob([JSON.stringify(daten, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "training-sicherung-" + new Date().toISOString().slice(0, 10) + ".json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+
+  /* Merken, wann zuletzt gesichert wurde – danach ist Ruhe,
+     bis wieder genug Zeit vergangen oder genug trainiert wurde. */
+  daten.letzteSicherung = new Date().toISOString();
+  daten.trainingsSeitSicherung = 0;
+  ui.erinnerungAus = false;
+  speichern();
+  zeichnen();
+}
+
+function importieren() {
+  try {
+    const d = JSON.parse(document.getElementById("exportText").value);
+    if (!d.geraete) throw new Error("ungültig");
+    daten = {
+      plaene: d.plaene || [], geraete: d.geraete || [],
+      verlauf: d.verlauf || [], koerpergewicht: d.koerpergewicht || [],
+    };
+    speichern(); sheetSchliessen(); zeichnen();
+  } catch (e) {
+    document.getElementById("importFehler").classList.remove("versteckt");
+  }
+}
+
+/* ==================================================================
+   KLICKS VERARBEITEN
+   Alle Knöpfe werden hier zentral ausgewertet. Jeder Knopf hat
+   eine "data-..."-Markierung, an der man erkennt, was er tun soll.
+   ================================================================== */
+document.addEventListener("click", e => {
+  const ziel = e.target.closest("[data-tab],[data-start],[data-planneu],[data-planbearbeiten],[data-planhoch],[data-planrunter],[data-plansichern],[data-planloeschen],[data-geraetneu],[data-geraetbearbeiten],[data-geraethoch],[data-geraetrunter],[data-geraetsichern],[data-geraetloeschen],[data-satz],[data-warm],[data-kg],[data-beenden],[data-timerplus],[data-timerstop],[data-abbrechen],[data-export],[data-import],[data-download],[data-chip],[data-kgspeichern],[data-spaeter]");
+  if (!ziel) return;
+  const d = ziel.dataset;
+
+  if (d.tab)      { ui.tab = d.tab; zeichnen(); }
+  else if (d.start)  trainingStarten(d.start);
+  else if (d.satz)   satzTippen(d.satz, +d.i);
+  else if (d.warm)   warmTippen(d.warm, +d.i);
+  else if (d.kg)     gewichtAendern(d.kg, +d.d);
+  else if (d.beenden) trainingBeenden();
+
+  else if (d.timerplus) { ui.timer += KONFIG.PAUSE_EXTRA; timerZeichnen(); }
+  else if (d.timerstop) pauseBeenden();
+
+  else if (d.planneu)         planFormular(null);
+  else if (d.planbearbeiten)  planFormular(d.planbearbeiten);
+  else if (d.plansichern)     planSichern(d.plansichern);
+  else if (d.planloeschen)    planLoeschen(d.planloeschen);
+  else if (d.planhoch)        verschieben(daten.plaene, +d.planhoch, -1);
+  else if (d.planrunter)      verschieben(daten.plaene, +d.planrunter, 1);
+
+  else if (d.geraetneu)        geraetFormular(null);
+  else if (d.geraetbearbeiten) geraetFormular(d.geraetbearbeiten);
+  else if (d.geraetsichern)    geraetSichern(d.geraetsichern);
+  else if (d.geraetloeschen)   geraetLoeschen(d.geraetloeschen);
+  else if (d.geraethoch)       verschieben(daten.geraete, +d.geraethoch, -1);
+  else if (d.geraetrunter)     verschieben(daten.geraete, +d.geraetrunter, 1);
+
+  else if (d.chip)      ziel.classList.toggle("aktiv"); // Plan an-/abwählen im Formular
+  else if (d.abbrechen) sheetSchliessen();
+  else if (d.export)    exportFormular();
+  else if (d.import)    importieren();
+  else if (d.download)  herunterladen();
+  else if (d.spaeter)   { ui.erinnerungAus = true; zeichnen(); } // Hinweis bis zum nächsten Training ausblenden
+
+
+  else if (d.kgspeichern) {
+    const wert = parseFloat(document.getElementById("kgFeld").value.replace(",", "."));
+    if (wert > 0) {
+      daten.koerpergewicht.push({ datum: new Date().toISOString(), kg: Math.round(wert * 10) / 10 });
+      speichern(); zeichnen();
+    }
+  }
+});
+
+/* Eintrag in einer Liste nach oben/unten schieben */
+function verschieben(liste, index, richtung) {
+  const ziel = index + richtung;
+  if (ziel < 0 || ziel >= liste.length) return;
+  [liste[index], liste[ziel]] = [liste[ziel], liste[index]];
+  speichern(); zeichnen();
+}
+
+/* Auswahl des Geräts im Statistik-Diagramm */
+document.addEventListener("change", e => {
+  if (e.target.id === "chartWahl") { ui.chartGeraet = e.target.value; zeichnen(); }
+});
+
+/* Zwei-Finger-Zoom zusätzlich abfangen (iOS ignoriert die Viewport-Angabe teils) */
+document.addEventListener("touchmove", e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+document.addEventListener("gesturestart", e => e.preventDefault());
+
+/* ==================================================================
+   APP-SYMBOL & INSTALLATION
+   Erzeugt Symbol und Beschreibung, damit die App über
+   "Zum Home-Bildschirm" wie eine echte App aussieht.
+   ================================================================== */
+(function appSymbol() {
+  /* Symbol zeichnen: rote Hantel auf dunklem Grund */
+  const c = document.createElement("canvas");
+  c.width = c.height = 192;
+  const k = c.getContext("2d");
+  k.fillStyle = "#0A0A0C"; k.fillRect(0, 0, 192, 192);
+  k.fillStyle = "#E10600";
+  k.fillRect(34, 78, 22, 36);   // Gewicht links
+  k.fillRect(136, 78, 22, 36);  // Gewicht rechts
+  k.fillRect(56, 88, 80, 16);   // Stange
+  const symbol = c.toDataURL("image/png");
+
+  const link = document.createElement("link");
+  link.rel = "apple-touch-icon"; link.href = symbol;
+  document.head.appendChild(link);
+
+  /* Beschreibung für Android/Chrome ("App installieren") */
+  const manifest = {
+    name: "Training", short_name: "Training", start_url: ".",
+    display: "standalone", background_color: "#0A0A0C", theme_color: "#0A0A0C",
+    icons: [{ src: symbol, sizes: "192x192", type: "image/png", purpose: "any maskable" }],
+  };
+  const m = document.createElement("link");
+  m.rel = "manifest";
+  m.href = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: "application/json" }));
+  document.head.appendChild(m);
+})();
+
+/* ==================================================================
+   START
+   ================================================================== */
+laden();
+zeichnen();
+</script>
+</body>
+</html>
