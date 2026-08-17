@@ -246,6 +246,27 @@ svg.chart { width: 100%; height: 180px; margin-top: 12px; display: block; }
 .reihe-balken { height: 8px; background: var(--kante); border-radius: 4px; overflow: hidden; }
 .reihe-balken > div { height: 100%; background: var(--akzent); border-radius: 4px; }
 .hinweis { font-size: 12px; color: var(--leise); text-align: center; margin-top: 10px; line-height: 1.5; }
+
+/* ---------- Kalorientracker ---------- */
+.kal-ring { width:140px; height:140px; border-radius:50%; display:grid; place-items:center; margin:10px auto 18px; position:relative; background:conic-gradient(var(--akzent) var(--kal-pct,0%), var(--kante) 0); }
+.kal-ring::after { content:""; position:absolute; inset:11px; border-radius:50%; background:var(--karte); }
+.kal-ring-inhalt { position:relative; z-index:1; text-align:center; }
+.kal-ring-inhalt .gross { font-size:28px; font-weight:800; }
+.makro-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.makro { text-align:center; padding:10px 6px; border:1px solid var(--kante); border-radius:12px; }
+.makro b { display:block; font-size:15px; }
+.makro span { font-size:10px; color:var(--leise); }
+.makro-balken { height:5px; background:var(--kante); border-radius:3px; overflow:hidden; margin-top:6px; }
+.makro-balken div { height:100%; background:var(--gruen); }
+.essen-zeile { padding:11px 0; border-bottom:1px solid var(--kante); }
+.essen-zeile:last-child { border-bottom:0; }
+
+/* ---------- Barcode-Scanner ---------- */
+.barcode-box { border:1px solid var(--kante); border-radius:14px; padding:12px; margin-top:12px; }
+.barcode-video { width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:14px; background:#000; display:block; }
+.barcode-status { font-size:12px; color:var(--leise); line-height:1.5; margin-top:9px; text-align:center; }
+.barcode-status.fehler { color:var(--akzent); }
+.barcode-produkt { margin-top:12px; padding:12px; border:1px solid var(--kante); border-radius:12px; }
 </style>
 </head>
 
@@ -265,7 +286,7 @@ svg.chart { width: 100%; height: 180px; margin-top: 12px; display: block; }
    Doppelpunkt ändern.
    ================================================================== */
 const KONFIG = {
-  VERSION: "0.2",            // Versionsnummer der App – bei Änderungen hochzählen (z. B. "0.2")
+  VERSION: "0.4",            // Versionsnummer der App – bei Änderungen hochzählen (z. B. "0.2")
   STANDARD_SAETZE: 3,        // Arbeitssätze für neue Geräte
   STANDARD_WDH: 10,          // Ziel-Wiederholungen für neue Geräte
   STANDARD_GEWICHT: 20,      // Startgewicht in kg für neue Geräte
@@ -290,7 +311,7 @@ const MUSKELGRUPPEN = ["Brust","Rücken","Beine","Schultern","Bizeps","Trizeps",
    DATEN & SPEICHER
    ================================================================== */
 /* Alle Daten der App an einem Ort */
-let daten = { plaene: [], geraete: [], verlauf: [], koerpergewicht: [] };
+let daten = { plaene: [], geraete: [], verlauf: [], koerpergewicht: [], kalorien: [], kalorienZiel: { kcal: 2200, protein: 150, kohlenhydrate: 220, fett: 70 } };
 
 /* Zustand, der nicht gespeichert wird (nur während der Nutzung) */
 let ui = {
@@ -299,6 +320,9 @@ let ui = {
   timer: null,         // Restsekunden der Pause (null = keine Pause)
   timerLauf: null,     // Interner Zähler
   chartGeraet: "",     // Gewähltes Gerät im Diagramm
+  kalorienDatum: new Date().toISOString().slice(0, 10), // Angezeigter Tag im Kalorientracker
+  scannerStream: null, // Kamera-Stream des Barcode-Scanners
+  scannerLauf: false,  // Läuft die Erkennung gerade?
 };
 
 /* Hell-/Dunkelmodus – Auswahl bleibt auf diesem Gerät gespeichert */
@@ -325,6 +349,8 @@ function laden() {
   try {
     const roh = localStorage.getItem(KONFIG.SPEICHER_SCHLUESSEL);
     if (roh) daten = Object.assign(daten, JSON.parse(roh));
+    daten.kalorien = daten.kalorien || [];
+    daten.kalorienZiel = Object.assign({ kcal: 2200, protein: 150, kohlenhydrate: 220, fett: 70 }, daten.kalorienZiel || {});
   } catch (e) { console.warn("Laden fehlgeschlagen", e); }
   startPlanSicherstellen();
 }
@@ -447,8 +473,8 @@ function htmlErinnerung() {
    ================================================================== */
 function zeichnen() {
   const t = ui.training;
-  document.getElementById("kopfKlein").textContent = t ? t.planName : "Krafttraining";
-  document.getElementById("kopfGross").textContent = t ? "Läuft…" : "Training";
+  document.getElementById("kopfKlein").textContent = t ? t.planName : (ui.tab === "kalorien" ? "Ernährung" : "Krafttraining");
+  document.getElementById("kopfGross").textContent = t ? "Läuft…" : (ui.tab === "kalorien" ? "Kalorien" : "Training");
 
   const inhalt = document.getElementById("inhalt");
   /* Der Hinweisbalken erscheint überall außer im laufenden Training,
@@ -457,10 +483,11 @@ function zeichnen() {
   if (ui.tab === "training") inhalt.innerHTML = erinnerung + (t ? htmlTrainingLaeuft() : htmlTrainingStart());
   else if (ui.tab === "geraete") inhalt.innerHTML = erinnerung + htmlGeraete();
   else if (ui.tab === "statistik") inhalt.innerHTML = erinnerung + htmlStatistik();
+  else if (ui.tab === "kalorien") inhalt.innerHTML = erinnerung + htmlKalorien();
   else inhalt.innerHTML = erinnerung + htmlVerlauf();
 
   /* Reiter-Leiste */
-  const reiter = [["training","Training"],["geraete","Pläne & Geräte"],["statistik","Statistik"],["verlauf","Verlauf"]];
+  const reiter = [["training","Training"],["kalorien","Kalorien"],["geraete","Pläne"],["statistik","Statistik"],["verlauf","Verlauf"]];
   document.getElementById("nav").innerHTML = reiter.map(([id, name]) =>
     `<button data-tab="${id}" class="${ui.tab === id ? "aktiv" : ""}">${name}</button>`).join("");
 }
@@ -750,6 +777,210 @@ function diagramm(punkte, farbe) {
     <text x="2" y="${y(min) + 3}" fill="var(--leise)" font-size="9">${min}</text>
     <polyline points="${linie}" fill="none" stroke="${farbe}" stroke-width="2.5" stroke-linejoin="round"/>
     ${kreise}${xText}</svg>`;
+}
+
+/* ---------- Reiter "Kalorien" ---------- */
+function htmlKalorien() {
+  const tag = ui.kalorienDatum;
+  const eintraege = (daten.kalorien || []).filter(e => e.datum === tag);
+  const sum = eintraege.reduce((a,e) => ({
+    kcal:a.kcal+(+e.kcal||0), protein:a.protein+(+e.protein||0),
+    kohlenhydrate:a.kohlenhydrate+(+e.kohlenhydrate||0), fett:a.fett+(+e.fett||0)
+  }), {kcal:0,protein:0,kohlenhydrate:0,fett:0});
+  const z = daten.kalorienZiel;
+  const pct = Math.min(100, Math.round(sum.kcal / Math.max(1,z.kcal) * 100));
+  const rest = z.kcal - sum.kcal;
+  const makro = (name, wert, ziel) => `<div class="makro"><b>${Math.round(wert)} / ${ziel} g</b><span>${name}</span><div class="makro-balken"><div style="width:${Math.min(100,wert/Math.max(1,ziel)*100)}%"></div></div></div>`;
+  const gruppen = ["Frühstück","Mittagessen","Abendessen","Snack"];
+  let h = `<div class="karte">
+    <div class="zeile"><button class="mini" data-kaltag="-1">‹</button><input id="kalDatum" type="date" value="${tag}" style="width:auto;max-width:190px;text-align:center"><button class="mini" data-kaltag="1">›</button></div>
+    <div class="kal-ring" style="--kal-pct:${pct}%"><div class="kal-ring-inhalt"><div class="gross">${Math.round(sum.kcal)}</div><div class="unter">von ${z.kcal} kcal</div></div></div>
+    <div style="text-align:center;font-size:14px;margin-top:-8px;margin-bottom:14px;color:${rest < 0 ? 'var(--akzent)' : 'var(--leise)'}">${rest >= 0 ? Math.round(rest)+' kcal übrig' : Math.abs(Math.round(rest))+' kcal darüber'}</div>
+    <div class="makro-grid">${makro("Protein",sum.protein,z.protein)}${makro("Kohlenhydrate",sum.kohlenhydrate,z.kohlenhydrate)}${makro("Fett",sum.fett,z.fett)}</div>
+  </div>`;
+  gruppen.forEach(gruppe => {
+    const es = eintraege.filter(e => e.mahlzeit === gruppe);
+    h += `<div class="karte"><div class="zeile"><div class="titel">${gruppe}</div><button class="mini" data-kalneu="${gruppe}" title="Lebensmittel hinzufügen">+</button></div>`;
+    if (!es.length) h += `<div class="unter" style="padding-top:9px">Noch nichts eingetragen.</div>`;
+    else h += es.map(e => `<div class="essen-zeile"><div class="zeile"><div style="min-width:0"><div style="font-size:14px;font-weight:600">${esc(e.name)}</div><div class="unter">${e.menge ? Math.round(e.menge)+" g · " : ""}P ${Math.round(e.protein||0)} g · KH ${Math.round(e.kohlenhydrate||0)} g · F ${Math.round(e.fett||0)} g</div></div><div class="zeile" style="gap:7px;flex:0 0 auto"><b style="font-size:14px">${Math.round(e.kcal)} kcal</b><button class="mini" data-kalloesch="${e.id}" style="font-size:14px">×</button></div></div></div>`).join("");
+    h += `</div>`;
+  });
+  h += `<button class="knopf2" data-kalziel="1">Tagesziele anpassen</button>`;
+  return h;
+}
+
+function kalorienFormular(mahlzeit) {
+  scannerStoppen();
+  sheetOeffnen(`<div style="font-size:18px;font-weight:700;margin-bottom:6px">Lebensmittel hinzufügen</div>
+    <div class="unter">${esc(mahlzeit)} · ${new Date(ui.kalorienDatum+'T12:00:00').toLocaleDateString('de-DE')}</div>
+
+    <div class="barcode-box">
+      <div style="font-size:14px;font-weight:700">Barcode</div>
+      <div class="unter">Produkt scannen oder Nummer manuell eingeben.</div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input id="barcodeFeld" inputmode="numeric" autocomplete="off" placeholder="EAN / UPC" style="flex:1">
+        <button class="knopf2" data-barcodesuchen="1" style="width:auto;margin:0;padding:0 15px">Suchen</button>
+      </div>
+      <button class="knopf2" data-barcodescan="1">📷 Barcode scannen</button>
+      <div id="barcodeBereich" class="versteckt" style="margin-top:10px">
+        <video id="barcodeVideo" class="barcode-video" playsinline muted></video>
+        <div id="barcodeStatus" class="barcode-status">Kamera wird gestartet…</div>
+        <button class="knopf2 rot" data-barcodestop="1">Scanner schließen</button>
+      </div>
+      <div id="barcodeProdukt"></div>
+    </div>
+
+    <label class="feld">Lebensmittel / Gericht</label><input id="kalName" placeholder="z. B. Skyr mit Haferflocken">
+    <label class="feld">Menge (g)</label><input id="kalMenge" type="number" inputmode="decimal" min="1" step="1" value="100">
+    <div class="unter" id="kalBasisHinweis">Manuelle Werte beziehen sich auf die eingetragene Menge.</div>
+    <label class="feld">Kalorien</label><input id="kalKcal" type="number" inputmode="decimal" min="0" placeholder="kcal">
+    <div class="spalten"><div><label class="feld">Protein (g)</label><input id="kalProtein" type="number" inputmode="decimal" min="0" step="0.1"></div><div><label class="feld">Kohlenhydrate (g)</label><input id="kalKh" type="number" inputmode="decimal" min="0" step="0.1"></div></div>
+    <label class="feld">Fett (g)</label><input id="kalFett" type="number" inputmode="decimal" min="0" step="0.1">
+    <button class="knopf" data-kalspeichern="${esc(mahlzeit)}">Eintragen</button><button class="knopf2" data-abbrechen="1">Abbrechen</button>`);
+}
+
+function scannerStoppen() {
+  ui.scannerLauf = false;
+  if (ui.scannerStream) {
+    ui.scannerStream.getTracks().forEach(t => t.stop());
+    ui.scannerStream = null;
+  }
+}
+
+async function barcodeScannerStarten() {
+  const bereich = document.getElementById('barcodeBereich');
+  const video = document.getElementById('barcodeVideo');
+  const status = document.getElementById('barcodeStatus');
+  if (!bereich || !video || !status) return;
+  bereich.classList.remove('versteckt');
+  status.className = 'barcode-status';
+  status.textContent = 'Kamera wird gestartet…';
+
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    status.className = 'barcode-status fehler';
+    status.textContent = 'Kamerazugriff benötigt HTTPS. Nutze alternativ die manuelle Barcode-Eingabe.';
+    return;
+  }
+  if (!('BarcodeDetector' in window)) {
+    status.className = 'barcode-status fehler';
+    status.textContent = 'Dieser Browser unterstützt die automatische Barcode-Erkennung nicht. Du kannst den Barcode oben manuell eingeben.';
+    return;
+  }
+
+  try {
+    scannerStoppen();
+    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+    ui.scannerStream = stream;
+    video.srcObject = stream;
+    await video.play();
+    const detector = new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e']});
+    ui.scannerLauf = true;
+    status.textContent = 'Barcode in die Bildmitte halten…';
+
+    const erkennen = async () => {
+      if (!ui.scannerLauf || !document.getElementById('barcodeVideo')) return;
+      try {
+        const codes = await detector.detect(video);
+        if (codes.length && codes[0].rawValue) {
+          const code = codes[0].rawValue.replace(/\D/g,'');
+          document.getElementById('barcodeFeld').value = code;
+          status.textContent = 'Barcode erkannt: ' + code;
+          scannerStoppen();
+          bereich.classList.add('versteckt');
+          await barcodeProduktLaden(code);
+          return;
+        }
+      } catch (e) {}
+      requestAnimationFrame(erkennen);
+    };
+    requestAnimationFrame(erkennen);
+  } catch (e) {
+    scannerStoppen();
+    status.className = 'barcode-status fehler';
+    status.textContent = 'Kamera konnte nicht geöffnet werden. Prüfe die Kameraberechtigung für diese Website.';
+  }
+}
+
+async function barcodeProduktLaden(codeEingabe) {
+  const feld = document.getElementById('barcodeFeld');
+  const produktBox = document.getElementById('barcodeProdukt');
+  const code = String(codeEingabe || feld?.value || '').replace(/\D/g,'');
+  if (!produktBox || !code) return;
+  if (feld) feld.value = code;
+  produktBox.innerHTML = `<div class="barcode-status">Produkt wird gesucht…</div>`;
+
+  try {
+    const felder = 'code,product_name,brands,nutriments,serving_size,serving_quantity,image_front_small_url';
+    const url = `https://world.openfoodfacts.org/api/v3/product/${encodeURIComponent(code)}?fields=${encodeURIComponent(felder)}`;
+    const antwort = await fetch(url, {headers:{'Accept':'application/json'}});
+    if (!antwort.ok) throw new Error('HTTP '+antwort.status);
+    const json = await antwort.json();
+    const p = json.product;
+    if (!p) {
+      produktBox.innerHTML = `<div class="barcode-status fehler">Produkt nicht gefunden. Du kannst es unten manuell eintragen.</div>`;
+      return;
+    }
+    const n = p.nutriments || {};
+    const wert = (...keys) => {
+      for (const k of keys) if (Number.isFinite(+n[k])) return +n[k];
+      return 0;
+    };
+    const kcal100 = wert('energy-kcal_100g');
+    const protein100 = wert('proteins_100g');
+    const kh100 = wert('carbohydrates_100g');
+    const fett100 = wert('fat_100g');
+    const name = [p.product_name || 'Unbekanntes Produkt', p.brands || ''].filter(Boolean).join(' · ');
+
+    if (!kcal100 && !protein100 && !kh100 && !fett100) {
+      produktBox.innerHTML = `<div class="barcode-produkt"><b>${esc(name)}</b><div class="barcode-status fehler">Produkt gefunden, aber keine verwertbaren Nährwerte pro 100 g hinterlegt.</div></div>`;
+      return;
+    }
+
+    produktBox.innerHTML = `<div class="barcode-produkt">
+      <div style="font-weight:700">${esc(name)}</div>
+      <div class="unter" style="margin-top:4px">pro 100 g: ${Math.round(kcal100)} kcal · P ${protein100.toFixed(1)} g · KH ${kh100.toFixed(1)} g · F ${fett100.toFixed(1)} g</div>
+      <button class="knopf2" data-barcodeuebernehmen="1" data-name="${esc(name)}" data-kcal="${kcal100}" data-protein="${protein100}" data-kh="${kh100}" data-fett="${fett100}" style="margin-top:10px">Nährwerte übernehmen</button>
+    </div>`;
+  } catch (e) {
+    produktBox.innerHTML = `<div class="barcode-status fehler">Produktdaten konnten nicht geladen werden. Prüfe deine Internetverbindung oder trage das Lebensmittel manuell ein.</div>`;
+  }
+}
+
+function barcodeProduktUebernehmen(el) {
+  document.getElementById('kalName').value = el.dataset.name || '';
+  const menge = Math.max(1, parseFloat((document.getElementById('kalMenge').value || '100').replace(',','.')) || 100);
+  const faktor = menge / 100;
+  document.getElementById('kalKcal').value = Math.round((+el.dataset.kcal || 0) * faktor);
+  document.getElementById('kalProtein').value = ((+el.dataset.protein || 0) * faktor).toFixed(1);
+  document.getElementById('kalKh').value = ((+el.dataset.kh || 0) * faktor).toFixed(1);
+  document.getElementById('kalFett').value = ((+el.dataset.fett || 0) * faktor).toFixed(1);
+  const hinweis = document.getElementById('kalBasisHinweis');
+  if (hinweis) hinweis.textContent = `Aus Barcode berechnet für ${menge} g. Bei Mengenänderung erneut „Nährwerte übernehmen“ tippen.`;
+}
+
+function kalorienSpeichern(mahlzeit) {
+  const name=document.getElementById('kalName').value.trim();
+  const n=id => parseFloat((document.getElementById(id).value||'0').replace(',','.')) || 0;
+  const kcal=n('kalKcal'); if (!name || kcal<=0) return;
+  daten.kalorien.push({id:neueId(),datum:ui.kalorienDatum,mahlzeit,name,menge:n('kalMenge'),kcal,protein:n('kalProtein'),kohlenhydrate:n('kalKh'),fett:n('kalFett')});
+  speichern(); sheetSchliessen(); zeichnen();
+}
+function kalorienZielFormular() {
+  const z=daten.kalorienZiel;
+  sheetOeffnen(`<div style="font-size:18px;font-weight:700">Tagesziele</div>
+    <label class="feld">Kalorien (kcal)</label><input id="zielKcal" type="number" value="${z.kcal}">
+    <label class="feld">Protein (g)</label><input id="zielProtein" type="number" value="${z.protein}">
+    <label class="feld">Kohlenhydrate (g)</label><input id="zielKh" type="number" value="${z.kohlenhydrate}">
+    <label class="feld">Fett (g)</label><input id="zielFett" type="number" value="${z.fett}">
+    <button class="knopf" data-kalzielspeichern="1">Speichern</button><button class="knopf2" data-abbrechen="1">Abbrechen</button>`);
+}
+function kalorienZielSpeichern() {
+  const val=id => Math.max(0, parseFloat(document.getElementById(id).value)||0);
+  daten.kalorienZiel={kcal:Math.round(val('zielKcal')),protein:Math.round(val('zielProtein')),kohlenhydrate:Math.round(val('zielKh')),fett:Math.round(val('zielFett'))};
+  speichern(); sheetSchliessen(); zeichnen();
+}
+function kalorienTag(delta) {
+  const d=new Date(ui.kalorienDatum+'T12:00:00'); d.setDate(d.getDate()+delta); ui.kalorienDatum=d.toISOString().slice(0,10); zeichnen();
 }
 
 /* ---------- Reiter "Verlauf" ---------- */
@@ -1043,7 +1274,7 @@ function zusammenfassungZeigen(z) {
    FORMULARE (Fenster von unten)
    ================================================================== */
 const sheet = () => document.getElementById("sheet");
-function sheetSchliessen() { sheet().classList.add("versteckt"); sheet().innerHTML = ""; }
+function sheetSchliessen() { scannerStoppen(); sheet().classList.add("versteckt"); sheet().innerHTML = ""; }
 function sheetOeffnen(html) { sheet().classList.remove("versteckt"); sheet().innerHTML = `<div>${html}</div>`; }
 
 /* ---------- Plan anlegen / bearbeiten ---------- */
@@ -1222,6 +1453,7 @@ function importieren() {
     daten = {
       plaene: d.plaene || [], geraete: d.geraete || [],
       verlauf: d.verlauf || [], koerpergewicht: d.koerpergewicht || [],
+      kalorien: d.kalorien || [], kalorienZiel: Object.assign({ kcal:2200, protein:150, kohlenhydrate:220, fett:70 }, d.kalorienZiel || {}),
     };
     speichern(); sheetSchliessen(); zeichnen();
   } catch (e) {
@@ -1235,12 +1467,22 @@ function importieren() {
    eine "data-..."-Markierung, an der man erkennt, was er tun soll.
    ================================================================== */
 document.addEventListener("click", e => {
-  const ziel = e.target.closest("[data-tab],[data-start],[data-planneu],[data-planbearbeiten],[data-planhoch],[data-planrunter],[data-plansichern],[data-planloeschen],[data-geraetneu],[data-geraetbearbeiten],[data-geraethoch],[data-geraetrunter],[data-geraetsichern],[data-geraetloeschen],[data-satz],[data-warm],[data-kg],[data-beenden],[data-timerplus],[data-timerstop],[data-abbrechen],[data-export],[data-import],[data-download],[data-chip],[data-kgspeichern],[data-spaeter],[data-abbruchfragen],[data-weitertrainieren],[data-loeschfragen],[data-themewechsel]");
+  const ziel = e.target.closest("[data-tab],[data-start],[data-planneu],[data-planbearbeiten],[data-planhoch],[data-planrunter],[data-plansichern],[data-planloeschen],[data-geraetneu],[data-geraetbearbeiten],[data-geraethoch],[data-geraetrunter],[data-geraetsichern],[data-geraetloeschen],[data-satz],[data-warm],[data-kg],[data-beenden],[data-timerplus],[data-timerstop],[data-abbrechen],[data-export],[data-import],[data-download],[data-chip],[data-kgspeichern],[data-spaeter],[data-abbruchfragen],[data-weitertrainieren],[data-loeschfragen],[data-themewechsel],[data-kalneu],[data-kalspeichern],[data-kalloesch],[data-kalziel],[data-kalzielspeichern],[data-kaltag],[data-barcodescan],[data-barcodestop],[data-barcodesuchen],[data-barcodeuebernehmen]");
   if (!ziel) return;
   const d = ziel.dataset;
 
   if (d.tab)      { ui.tab = d.tab; zeichnen(); }
   else if (d.themewechsel) themeUmschalten();
+  else if (d.kalneu) kalorienFormular(d.kalneu);
+  else if (d.barcodescan) barcodeScannerStarten();
+  else if (d.barcodestop) { scannerStoppen(); document.getElementById("barcodeBereich")?.classList.add("versteckt"); }
+  else if (d.barcodesuchen) barcodeProduktLaden();
+  else if (d.barcodeuebernehmen) barcodeProduktUebernehmen(ziel);
+  else if (d.kalspeichern) kalorienSpeichern(d.kalspeichern);
+  else if (d.kalloesch) { daten.kalorien = daten.kalorien.filter(x => x.id !== d.kalloesch); speichern(); zeichnen(); }
+  else if (d.kalziel) kalorienZielFormular();
+  else if (d.kalzielspeichern) kalorienZielSpeichern();
+  else if (d.kaltag) kalorienTag(+d.kaltag);
   else if (d.start)  trainingStarten(d.start);
   else if (d.satz)   satzTippen(d.satz, +d.i);
   else if (d.warm)   warmTippen(d.warm, +d.i);
@@ -1295,6 +1537,7 @@ function verschieben(liste, index, richtung) {
 /* Auswahl des Geräts im Statistik-Diagramm */
 document.addEventListener("change", e => {
   if (e.target.id === "chartWahl") { ui.chartGeraet = e.target.value; zeichnen(); }
+  else if (e.target.id === "kalDatum") { ui.kalorienDatum = e.target.value; zeichnen(); }
 });
 
 /* Zwei-Finger-Zoom zusätzlich abfangen (iOS ignoriert die Viewport-Angabe teils) */
