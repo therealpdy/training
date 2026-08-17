@@ -46,6 +46,24 @@
   --gruen:       #30D158;   /* Grün: erledigte Sätze */
   --blau:        #0A84FF;   /* Blau: Körpergewichts-Diagramm */
   --gelb:        #FFD60A;   /* Gelb: Warm-up-Sätze, Notizen */
+  --nav:         rgba(10,10,12,.92);
+  --overlay:     rgba(10,10,12,.96);
+  --sheetmask:   rgba(0,0,0,.70);
+}
+
+html[data-theme="light"] {
+  --hintergrund: #F2F2F7;
+  --karte:       #FFFFFF;
+  --kante:       #D1D1D6;
+  --text:        #111113;
+  --leise:       #6E6E73;
+  --akzent:      #D70000;
+  --gruen:       #248A3D;
+  --blau:        #007AFF;
+  --gelb:        #B88600;
+  --nav:         rgba(242,242,247,.92);
+  --overlay:     rgba(242,242,247,.97);
+  --sheetmask:   rgba(0,0,0,.28);
 }
 
 /* ---------- Grundgerüst ---------- */
@@ -141,7 +159,7 @@ button { font-family: inherit; cursor: pointer; }
 /* ---------- Reiter-Leiste unten ---------- */
 nav {
   position: fixed; bottom: 0; left: 0; right: 0; display: flex;
-  background: rgba(10,10,12,.92); backdrop-filter: blur(12px);
+  background: var(--nav); backdrop-filter: blur(12px);
   border-top: 1px solid var(--kante);
 }
 nav button {
@@ -170,7 +188,7 @@ input, select, textarea {
 
 /* ---------- Vollbild-Fenster (Timer, Zusammenfassung) ---------- */
 #overlay {
-  position: fixed; inset: 0; background: rgba(10,10,12,.96); z-index: 50;
+  position: fixed; inset: 0; background: var(--overlay); z-index: 50;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
   padding: 20px; text-align: center;
 }
@@ -200,7 +218,7 @@ input, select, textarea {
 }
 
 /* ---------- Formular-Fenster von unten ---------- */
-#sheet { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 60; display: flex; align-items: flex-end; justify-content: center; }
+#sheet { position: fixed; inset: 0; background: var(--sheetmask); z-index: 60; display: flex; align-items: flex-end; justify-content: center; }
 #sheet > div {
   background: var(--karte); border-radius: 22px 22px 0 0; padding: 22px 20px calc(30px + env(safe-area-inset-bottom));
   width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto;
@@ -247,7 +265,7 @@ svg.chart { width: 100%; height: 180px; margin-top: 12px; display: block; }
    Doppelpunkt ändern.
    ================================================================== */
 const KONFIG = {
-  VERSION: "0.1",            // Versionsnummer der App – bei Änderungen hochzählen (z. B. "0.2")
+  VERSION: "0.2",            // Versionsnummer der App – bei Änderungen hochzählen (z. B. "0.2")
   STANDARD_SAETZE: 3,        // Arbeitssätze für neue Geräte
   STANDARD_WDH: 10,          // Ziel-Wiederholungen für neue Geräte
   STANDARD_GEWICHT: 20,      // Startgewicht in kg für neue Geräte
@@ -282,6 +300,25 @@ let ui = {
   timerLauf: null,     // Interner Zähler
   chartGeraet: "",     // Gewähltes Gerät im Diagramm
 };
+
+/* Hell-/Dunkelmodus – Auswahl bleibt auf diesem Gerät gespeichert */
+const THEME_SCHLUESSEL = "training-app-theme";
+function themeLaden() {
+  const gespeichert = localStorage.getItem(THEME_SCHLUESSEL);
+  const theme = gespeichert === "light" ? "light" : "dark";
+  document.documentElement.dataset.theme = theme;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = theme === "light" ? "#F2F2F7" : "#0A0A0C";
+}
+function themeUmschalten() {
+  const neu = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+  localStorage.setItem(THEME_SCHLUESSEL, neu);
+  themeLaden();
+  zeichnen();
+}
+function themeName() {
+  return document.documentElement.dataset.theme === "light" ? "Hell" : "Dunkel";
+}
 
 /* Daten aus dem Browser-Speicher laden */
 function laden() {
@@ -433,7 +470,10 @@ function htmlTrainingStart() {
   if (daten.geraete.length === 0) {
     return `<div style="text-align:center;padding-top:30px">
       <p style="color:var(--leise);line-height:1.6">Noch keine Geräte angelegt.<br>Lege unter „Pläne &amp; Geräte" dein erstes Gerät an.</p>
-      <button class="knopf2" data-tab="geraete">Zu den Geräten</button></div>`;
+      <button class="knopf2" data-tab="geraete">Zu den Geräten</button>
+      <button class="knopf2" data-themewechsel="1" style="margin-top:14px">${themeName()}modus · wechseln</button>
+      <div style="text-align:center;color:var(--leise);font-size:11px;margin-top:18px">Version ${KONFIG.VERSION}</div>
+    </div>`;
   }
   const empf = empfohlenerPlan();
   let h = `<div style="font-size:13px;color:var(--leise);margin:6px 0 12px">Wähle deinen Plan für heute</div>`;
@@ -451,6 +491,7 @@ function htmlTrainingStart() {
       <div class="name" style="font-size:15px">Freies Training</div>
       <div class="info" style="color:var(--leise)">Alle ${daten.geraete.length} Geräte, ohne Plan</div></button>
     <button class="knopf2" data-planneu="1">+ Neuen Plan anlegen</button>
+    <button class="knopf2" data-themewechsel="1" style="margin-top:14px">${themeName()}modus · wechseln</button>
     <div style="text-align:center;color:var(--leise);font-size:11px;margin-top:18px">Version ${KONFIG.VERSION}</div>`;
   return h;
 }
@@ -678,13 +719,13 @@ function balkenDiagramm(punkte, farbe) {
     const x = 5 + i * breite;
     return `<rect x="${x + breite * .18}" y="${H - unten - hoehe}" width="${breite * .64}" height="${hoehe}"
               fill="${farbe}" rx="3"/>
-            ${p.wert > 0 ? `<text x="${x + breite / 2}" y="${H - unten - hoehe - 4}" fill="#F5F5F7"
+            ${p.wert > 0 ? `<text x="${x + breite / 2}" y="${H - unten - hoehe - 4}" fill="var(--text)"
               font-size="9" text-anchor="middle">${p.wert}</text>` : ""}
-            <text x="${x + breite / 2}" y="${H - 5}" fill="#8E8E93" font-size="8" text-anchor="middle">${p.label}</text>`;
+            <text x="${x + breite / 2}" y="${H - 5}" fill="var(--leise)" font-size="8" text-anchor="middle">${p.label}</text>`;
   }).join("");
 
   return `<svg class="chart" viewBox="0 0 ${B} ${H}" preserveAspectRatio="none">
-    <line x1="5" y1="${H - unten}" x2="${B - 5}" y2="${H - unten}" stroke="#232328"/>${balken}</svg>`;
+    <line x1="5" y1="${H - unten}" x2="${B - 5}" y2="${H - unten}" stroke="var(--kante)"/>${balken}</svg>`;
 }
 
 /* Einfaches Liniendiagramm als SVG (ohne externe Bibliothek) */
@@ -700,13 +741,13 @@ function diagramm(punkte, farbe) {
   const kreise = punkte.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.wert)}" r="3" fill="${farbe}"/>`).join("");
   /* Beschriftung: nur erster, mittlerer und letzter Punkt, damit es lesbar bleibt */
   const zeigen = [0, Math.floor(punkte.length / 2), punkte.length - 1];
-  const xText = zeigen.map(i => `<text x="${x(i)}" y="${H - 4}" fill="#8E8E93" font-size="9" text-anchor="middle">${punkte[i].label}</text>`).join("");
+  const xText = zeigen.map(i => `<text x="${x(i)}" y="${H - 4}" fill="var(--leise)" font-size="9" text-anchor="middle">${punkte[i].label}</text>`).join("");
 
   return `<svg class="chart" viewBox="0 0 ${B} ${H}" preserveAspectRatio="none">
-    <line x1="${rand}" y1="${y(max)}" x2="${B - 6}" y2="${y(max)}" stroke="#232328"/>
-    <line x1="${rand}" y1="${y(min)}" x2="${B - 6}" y2="${y(min)}" stroke="#232328"/>
-    <text x="2" y="${y(max) + 3}" fill="#8E8E93" font-size="9">${max}</text>
-    <text x="2" y="${y(min) + 3}" fill="#8E8E93" font-size="9">${min}</text>
+    <line x1="${rand}" y1="${y(max)}" x2="${B - 6}" y2="${y(max)}" stroke="var(--kante)"/>
+    <line x1="${rand}" y1="${y(min)}" x2="${B - 6}" y2="${y(min)}" stroke="var(--kante)"/>
+    <text x="2" y="${y(max) + 3}" fill="var(--leise)" font-size="9">${max}</text>
+    <text x="2" y="${y(min) + 3}" fill="var(--leise)" font-size="9">${min}</text>
     <polyline points="${linie}" fill="none" stroke="${farbe}" stroke-width="2.5" stroke-linejoin="round"/>
     ${kreise}${xText}</svg>`;
 }
@@ -1194,11 +1235,12 @@ function importieren() {
    eine "data-..."-Markierung, an der man erkennt, was er tun soll.
    ================================================================== */
 document.addEventListener("click", e => {
-  const ziel = e.target.closest("[data-tab],[data-start],[data-planneu],[data-planbearbeiten],[data-planhoch],[data-planrunter],[data-plansichern],[data-planloeschen],[data-geraetneu],[data-geraetbearbeiten],[data-geraethoch],[data-geraetrunter],[data-geraetsichern],[data-geraetloeschen],[data-satz],[data-warm],[data-kg],[data-beenden],[data-timerplus],[data-timerstop],[data-abbrechen],[data-export],[data-import],[data-download],[data-chip],[data-kgspeichern],[data-spaeter],[data-abbruchfragen],[data-weitertrainieren],[data-loeschfragen]");
+  const ziel = e.target.closest("[data-tab],[data-start],[data-planneu],[data-planbearbeiten],[data-planhoch],[data-planrunter],[data-plansichern],[data-planloeschen],[data-geraetneu],[data-geraetbearbeiten],[data-geraethoch],[data-geraetrunter],[data-geraetsichern],[data-geraetloeschen],[data-satz],[data-warm],[data-kg],[data-beenden],[data-timerplus],[data-timerstop],[data-abbrechen],[data-export],[data-import],[data-download],[data-chip],[data-kgspeichern],[data-spaeter],[data-abbruchfragen],[data-weitertrainieren],[data-loeschfragen],[data-themewechsel]");
   if (!ziel) return;
   const d = ziel.dataset;
 
   if (d.tab)      { ui.tab = d.tab; zeichnen(); }
+  else if (d.themewechsel) themeUmschalten();
   else if (d.start)  trainingStarten(d.start);
   else if (d.satz)   satzTippen(d.satz, +d.i);
   else if (d.warm)   warmTippen(d.warm, +d.i);
@@ -1295,6 +1337,7 @@ document.addEventListener("gesturestart", e => e.preventDefault());
 /* ==================================================================
    START
    ================================================================== */
+themeLaden();
 laden();
 zeichnen();
 </script>
