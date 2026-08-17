@@ -714,11 +714,14 @@ function htmlVerlauf() {
   if (daten.verlauf.length === 0)
     return `<p class="hinweis" style="padding-top:40px">Noch keine abgeschlossenen Trainings.</p>`;
 
-  return daten.verlauf.map(v => `<div class="karte">
+  return daten.verlauf.map((v, i) => `<div class="karte">
     <div class="zeile">
       <div class="titel" style="font-size:15px">${new Date(v.datum).toLocaleDateString("de-DE",
         { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })}</div>
-      <div class="unter" style="margin:0">${v.dauerMin} min</div>
+      <div class="zeile" style="gap:10px">
+        <div class="unter" style="margin:0">${v.dauerMin} min</div>
+        <button class="mini" data-loeschfragen="${i}" title="Training löschen">🗑</button>
+      </div>
     </div>
     ${v.planName ? `<div style="margin-top:5px"><span class="badge">${esc(v.planName)}</span></div>` : ""}
     <div class="unter">${v.saetzeErledigt}/${v.saetzeGesamt} Sätze · Volumen ${v.volumen ?? "–"} kg</div>
@@ -847,12 +850,14 @@ function abbruchFragen() {
     </div>
 
     <button class="knopf" data-weitertrainieren="1" style="width:auto;padding:14px 34px">Weiter trainieren</button>`;
-  schieberEinrichten();
+  schieberEinrichten(trainingAbbrechen);
 }
 
 /* Die Wisch-Geste: Knopf lässt sich nach rechts ziehen.
-   Erst ganz rechts löst der Abbruch aus. */
-function schieberEinrichten() {
+   Erst ganz rechts wird die übergebene Aktion ausgelöst.
+   Wird für den Trainings-Abbruch UND das Löschen aus dem
+   Verlauf benutzt. */
+function schieberEinrichten(aktion) {
   const bahn = document.getElementById("schieber");
   const knopf = document.getElementById("schieberKnopf");
   const fuellung = document.getElementById("schieberFuellung");
@@ -882,9 +887,9 @@ function schieberEinrichten() {
 
   knopf.addEventListener("pointerup", () => {
     zieht = false;
-    /* Ganz rechts angekommen? Dann abbrechen. */
+    /* Ganz rechts angekommen? Dann die Aktion ausführen. */
     if (weg >= maxWeg() - 4) {
-      trainingAbbrechen();
+      aktion();
     } else {
       /* Sonst gleitet der Knopf zurück an den Anfang */
       knopf.style.transition = "transform .25s";
@@ -906,6 +911,44 @@ function trainingAbbrechen() {
   pauseBeenden();
   document.getElementById("overlay").classList.add("versteckt");
   zeichnen();
+}
+
+/* ==================================================================
+   TRAINING AUS DEM VERLAUF LÖSCHEN
+   ------------------------------------------------------------------
+   Gleiche doppelte Absicherung wie beim Abbruch: erst der
+   Mülleimer-Knopf, dann die Wisch-Geste. Gelöscht wird nur der
+   eine Eintrag – Geräte und Gewichte bleiben unberührt.
+   Hinweis: Statistiken (Volumen, Bestwerte usw.) werden aus dem
+   Verlauf berechnet und ändern sich dadurch mit.
+   ================================================================== */
+function verlaufLoeschenFragen(index) {
+  const v = daten.verlauf[index];
+  if (!v) return;
+  const o = document.getElementById("overlay");
+  o.classList.remove("versteckt");
+  o.innerHTML = `
+    <div style="font-size:40px">🗑</div>
+    <div style="font-size:22px;font-weight:800">Training löschen?</div>
+    <div style="color:var(--leise);line-height:1.7;max-width:320px">
+      ${new Date(v.datum).toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" })}
+      ${v.planName ? "· " + esc(v.planName) : ""}<br>
+      ${v.saetzeErledigt}/${v.saetzeGesamt} Sätze · ${v.volumen} kg Volumen<br>
+      <b style="color:var(--akzent)">Das kann nicht rückgängig gemacht werden.</b></div>
+
+    <div class="schieber" id="schieber">
+      <div class="schieber-fuellung" id="schieberFuellung"></div>
+      <div class="schieber-text" id="schieberText">Zum Löschen schieben</div>
+      <div class="schieber-knopf" id="schieberKnopf">›</div>
+    </div>
+
+    <button class="knopf" data-weitertrainieren="1" style="width:auto;padding:14px 34px">Behalten</button>`;
+  schieberEinrichten(() => {
+    daten.verlauf.splice(index, 1);   // Genau diesen Eintrag entfernen
+    speichern();
+    o.classList.add("versteckt");
+    zeichnen();
+  });
 }
 
 /* ==================================================================
@@ -1149,7 +1192,7 @@ function importieren() {
    eine "data-..."-Markierung, an der man erkennt, was er tun soll.
    ================================================================== */
 document.addEventListener("click", e => {
-  const ziel = e.target.closest("[data-tab],[data-start],[data-planneu],[data-planbearbeiten],[data-planhoch],[data-planrunter],[data-plansichern],[data-planloeschen],[data-geraetneu],[data-geraetbearbeiten],[data-geraethoch],[data-geraetrunter],[data-geraetsichern],[data-geraetloeschen],[data-satz],[data-warm],[data-kg],[data-beenden],[data-timerplus],[data-timerstop],[data-abbrechen],[data-export],[data-import],[data-download],[data-chip],[data-kgspeichern],[data-spaeter],[data-abbruchfragen],[data-weitertrainieren]");
+  const ziel = e.target.closest("[data-tab],[data-start],[data-planneu],[data-planbearbeiten],[data-planhoch],[data-planrunter],[data-plansichern],[data-planloeschen],[data-geraetneu],[data-geraetbearbeiten],[data-geraethoch],[data-geraetrunter],[data-geraetsichern],[data-geraetloeschen],[data-satz],[data-warm],[data-kg],[data-beenden],[data-timerplus],[data-timerstop],[data-abbrechen],[data-export],[data-import],[data-download],[data-chip],[data-kgspeichern],[data-spaeter],[data-abbruchfragen],[data-weitertrainieren],[data-loeschfragen]");
   if (!ziel) return;
   const d = ziel.dataset;
 
@@ -1160,6 +1203,7 @@ document.addEventListener("click", e => {
   else if (d.kg)     gewichtAendern(d.kg, +d.d);
   else if (d.beenden) trainingBeenden();
   else if (d.abbruchfragen)     abbruchFragen();
+  else if (d.loeschfragen)      verlaufLoeschenFragen(+d.loeschfragen);
   else if (d.weitertrainieren)  document.getElementById("overlay").classList.add("versteckt");
 
   else if (d.timerplus) { ui.timer += KONFIG.PAUSE_EXTRA; timerZeichnen(); }
